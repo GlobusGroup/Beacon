@@ -2,15 +2,16 @@
 // the brand kit's PNGs. The kit ships raster artwork only — no ICNS, SVG or
 // asset catalogue — so this is the one place those are derived.
 //
-//   swift Scripts/generate-brand-assets.swift ~/Downloads/Beacon-Brand-Kit
+//   swift Scripts/generate-brand-assets.swift            # uses Brand/ in this repo
+//   swift Scripts/generate-brand-assets.swift <kit-dir>  # or another copy of the kit
 import AppKit
 import Foundation
 
-let kit = URL(fileURLWithPath: CommandLine.arguments.dropFirst().first
-    ?? "\(NSHomeDirectory())/Downloads/Beacon-Brand-Kit")
-let assets = URL(fileURLWithPath: #filePath)
+let repo = URL(fileURLWithPath: #filePath)
     .deletingLastPathComponent().deletingLastPathComponent()
-    .appendingPathComponent("Beacon/Assets.xcassets")
+let kit = CommandLine.arguments.dropFirst().first.map { URL(fileURLWithPath: $0) }
+    ?? repo.appendingPathComponent("Brand")
+let assets = repo.appendingPathComponent("Beacon/Assets.xcassets")
 
 // Authoritative values from palette/beacon-colours.json.
 let ink = CGColor(srgbRed: 24 / 255, green: 28 / 255, blue: 32 / 255, alpha: 1)

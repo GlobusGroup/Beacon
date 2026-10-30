@@ -171,10 +171,21 @@ Runs the full stack on ports 8080/8443/15353 against a throwaway registry in
 `/tmp/beacon-dev`. Nothing is installed and the real system is untouched. Drive
 it with `BEACON_ROOT=/tmp/beacon-dev .build/release/beacon …`.
 
+## Brand
+
+`Brand/` holds the brand kit as supplied: the guide (`Beacon-Brand-Guide.pdf`),
+logos, palette and the original concept board. The guide is the current
+reference; the concept board's tagline has been dropped and shouldn't be reused.
+
+The app icon, menu bar icon and in-app artwork are derived from it by
+`swift Scripts/generate-brand-assets.swift`. Rerun that after updating the kit.
+
 ## Layout
 
 ```
 Package.swift            daemon, CLI, shared library
+Brand/                   brand kit v1.0: guide, logos, palette, concept board
+Scripts/                 asset generator and the app's embed build phase
 Sources/beacond/         DNS, proxy, certificates, registry, control socket
 Sources/beacon/          the CLI
 Beacon/                  the menu bar app (Xcode target)
