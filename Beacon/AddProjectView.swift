@@ -30,7 +30,10 @@ struct AddProjectView: View {
         }
         .frame(width: 460)
         .background(Color.beaconBackground)
-        .onAppear { secure = model.config.defaultSecure }
+        .onAppear {
+            secure = model.config.defaultSecure
+            AppWindows.becomeRegularApp()
+        }
     }
 
     private var form: some View {

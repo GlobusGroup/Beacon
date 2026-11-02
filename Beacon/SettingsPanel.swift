@@ -23,7 +23,10 @@ struct SettingsPanel: View {
         .formStyle(.grouped)
         .frame(width: 500)
         .fixedSize(horizontal: false, vertical: true)
-        .onAppear { load() }
+        .onAppear {
+            load()
+            AppWindows.becomeRegularApp()
+        }
         .onChange(of: model.config) { _, _ in if !isDirty { load(force: true) } }
         .sheet(item: $explaining) { action in
             PermissionExplainer(action: action) { purge in run(action, purge: purge) }
@@ -228,6 +231,8 @@ struct SettingsPanel: View {
         outcome = nil
         Task {
             outcome = (action, await model.perform(action, purge: purge))
+            // The macOS prompt took focus; come back to show what happened.
+            AppWindows.bringForward(WindowID.settings)
         }
     }
 }

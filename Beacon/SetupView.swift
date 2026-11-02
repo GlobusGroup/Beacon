@@ -55,7 +55,7 @@ struct SetupView: View {
         .sheet(item: $explaining) { action in
             PermissionExplainer(action: action) { _ in run(action) }
         }
-        .onAppear { NSApp.activate() }
+        .onAppear { AppWindows.becomeRegularApp() }
     }
 
     // MARK: - Sections
@@ -142,6 +142,8 @@ struct SetupView: View {
         outcomes[action] = nil
         Task {
             outcomes[action] = await model.perform(action)
+            // The macOS prompt took focus; come back to show what happened.
+            AppWindows.bringForward(WindowID.setup)
         }
     }
 }

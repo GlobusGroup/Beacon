@@ -7,7 +7,13 @@ struct BeaconApp: App {
 
     /// Checked once, synchronously, so first-run setup opens with the app
     /// instead of after the first poll.
-    private static let needsSetupAtLaunch = BeaconModel.setupNeededNow()
+    private static let needsSetupAtLaunch: Bool = {
+        #if DEBUG
+        // Lets the first-run window be exercised on an installed machine.
+        if CommandLine.arguments.contains("--show-setup") { return true }
+        #endif
+        return BeaconModel.setupNeededNow()
+    }()
 
     var body: some Scene {
         MenuBarExtra {
@@ -49,6 +55,8 @@ struct BeaconApp: App {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var windowCloseObserver: NSObjectProtocol?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         #if DEBUG
         if let directory = SnapshotRenderer.requestedDirectory {
@@ -56,5 +64,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             exit(0)
         }
         #endif
+
+        // Drop back to menu-bar-only once the last Beacon window closes.
+        windowCloseObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification, object: nil, queue: .main
+        ) { notification in
+            guard let window = notification.object as? NSWindow else { return }
+            MainActor.assumeIsolated { AppWindows.windowWillClose(window) }
+        }
+    }
+
+    /// Clicking the Dock icon while Beacon is a regular app, with its windows
+    /// hidden behind others, should bring them back rather than do nothing.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        true
     }
 }
