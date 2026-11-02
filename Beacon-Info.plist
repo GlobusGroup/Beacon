@@ -10,8 +10,8 @@
 <dict>
 	<key>SUFeedURL</key>
 	<string>https://github.com/GlobusGroup/Beacon/releases/latest/download/appcast.xml</string>
-	<key>SUPublicEDKey</key>
-	<string>REPLACE_WITH_generate_keys_-p</string>
+    <key>SUPublicEDKey</key>
+    <string>oikVsy9YTK4inQw0VYB1hzowM1qKg+Qf+/D+4Mi5Ry0=</string>
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
 </dict>
