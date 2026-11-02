@@ -22,6 +22,11 @@ struct MenuPanel: View {
                 SetupCard { AppWindows.open(WindowID.setup, with: openWindow) }
                     .padding(12)
                 if model.isRunning { Divider().overlay(Color.beaconHairline) }
+            } else if model.serviceOutdated {
+                // The password prompt is introduced in Settings, like every other.
+                ServiceUpdateCard { AppWindows.openSettings(with: openSettings) }
+                    .padding(12)
+                Divider().overlay(Color.beaconHairline)
             }
 
             if model.isRunning {
@@ -467,6 +472,30 @@ struct SetupCard: View {
                 .font(.beaconLabel)
                 .foregroundStyle(done ? Color.beaconSecondaryText : Color.beaconText)
         }
+    }
+}
+
+/// Shown after Sparkle has updated the app while the old service still runs.
+struct ServiceUpdateCard: View {
+    @EnvironmentObject private var model: BeaconModel
+    let onContinue: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Update the background service")
+                .font(.beaconBodyEmphasis)
+                .foregroundStyle(Color.beaconText)
+            Text("Beacon is now \(BeaconPaths.version), but its service is still \(model.status?.version ?? "an older version"). Update it to get this version's fixes in the service.")
+                .font(.beaconLabel)
+                .foregroundStyle(Color.beaconSecondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Update in Settings…", action: onContinue)
+                .buttonStyle(.signalCompact)
+                .padding(.top, 2)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .beaconCard()
     }
 }
 

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsPanel: View {
     @EnvironmentObject private var model: BeaconModel
+    @ObservedObject private var updater = AppUpdater.shared
     @Environment(\.openWindow) private var openWindow
 
     @State private var tlds = ""
@@ -24,6 +25,7 @@ struct SettingsPanel: View {
             routingSection
             sharingSection
             serviceSection
+            updatesSection
             uninstallSection
         }
         .formStyle(.grouped)
@@ -93,7 +95,7 @@ struct SettingsPanel: View {
     private var sharingSection: some View {
         Section {
             if model.isRunning && !model.daemonSupportsSharing {
-                Text("The background service is older than this app and can't share projects. Reinstall it with `make reinstall`, or uninstall and set Beacon up again.")
+                Text("The background service is older than this app and can't share projects. Update it under Service, below.")
                     .font(.beaconLabel)
                     .foregroundStyle(Color.beaconSecondaryText)
                     .fixedSize(horizontal: false, vertical: true)
@@ -194,6 +196,18 @@ struct SettingsPanel: View {
                         ProgressView().controlSize(.mini)
                         Text("Restarting…").font(.beaconLabel)
                     }
+                } else if model.activity == .installing {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.mini)
+                        Text(model.serviceOutdated ? "Updating…" : "Installing…").font(.beaconLabel)
+                    }
+                } else if let status = model.status, model.serviceOutdated {
+                    HStack(spacing: 8) {
+                        StatusLabel(text: "Outdated · \(status.version)", tone: .attention)
+                            .help("The service is \(status.version); this app is \(BeaconPaths.version).")
+                        Button("Update…") { explaining = .update }
+                            .buttonStyle(.signalCompact)
+                    }
                 } else if let status = model.status {
                     StatusLabel(text: "Running · version \(status.version)", tone: .online)
                 } else {
@@ -224,7 +238,7 @@ struct SettingsPanel: View {
                 }
             }
 
-            if let outcome, outcome.action == .trust {
+            if let outcome, outcome.action == .trust || outcome.action == .update {
                 outcomeNote(outcome.result)
             }
 
@@ -239,6 +253,28 @@ struct SettingsPanel: View {
             }
         } header: {
             Text("Service")
+        }
+    }
+
+    // MARK: - Updates
+
+    private var updatesSection: some View {
+        Section {
+            Toggle("Check for updates automatically", isOn: Binding(
+                get: { updater.checksAutomatically },
+                set: { updater.checksAutomatically = $0 }
+            ))
+            .disabled(!updater.isActive)
+            HStack {
+                Text(updater.isActive ? "Beacon \(BeaconPaths.version)" : "Beacon \(BeaconPaths.version) · updates are off in debug builds")
+                    .font(.beaconLabel)
+                    .foregroundStyle(Color.beaconSecondaryText)
+                Spacer()
+                Button("Check for Updates…") { updater.checkForUpdates() }
+                    .disabled(!updater.canCheckForUpdates)
+            }
+        } header: {
+            Text("Updates")
         }
     }
 

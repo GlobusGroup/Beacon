@@ -163,6 +163,23 @@ struct PermissionExplainer: View {
                 footnote: "Adding projects, changing settings and restarting the service never ask for a password."
             )
 
+        case .update:
+            return Content(
+                symbol: "arrow.triangle.2.circlepath",
+                title: "macOS will ask for your password",
+                lead: "Beacon was updated, but its background service is still the old version. Replacing it needs administrator access.",
+                listHeading: "What gets updated",
+                changes: [
+                    Change(symbol: "gearshape.2", text: "The background service, restarted with this version"),
+                    Change(symbol: "terminal", text: "The `beacon` command, in `/usr/local/bin`"),
+                    Change(symbol: "checkmark", text: "Your projects, ports, certificate and sharing stay as they are"),
+                ],
+                promptSymbol: "person.badge.key",
+                promptTitle: "“Allow administrator access for Beacon?”",
+                promptDetail: "Enter your Mac login password and click Allow Access.",
+                footnote: "Projects go offline for a few seconds while the service restarts."
+            )
+
         case .trust:
             return Content(
                 symbol: "checkmark.shield",

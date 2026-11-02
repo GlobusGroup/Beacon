@@ -11,10 +11,13 @@ enum ActionOutcome: Equatable {
     case failed(String)
 }
 
-/// The three things that make macOS ask the user for permission. Each one is
+/// The things that make macOS ask the user for permission. Each one is
 /// introduced by `PermissionExplainer` before the system prompt appears.
 enum PrivilegedAction: String, Identifiable {
     case install
+    /// Reinstalling the service from this copy of the app, after Sparkle has
+    /// updated the app and left the older service running.
+    case update
     case trust
     case uninstall
 
@@ -64,6 +67,14 @@ final class BeaconModel: ObservableObject {
 
     var needsSetup: Bool { !isRunning || !caTrusted }
 
+    /// The running service isn't the one this app carries, usually because
+    /// Sparkle updated the app. Different rather than older: a downgraded app
+    /// should put its own service back too.
+    var serviceOutdated: Bool {
+        guard let status else { return false }
+        return status.version != BeaconPaths.version
+    }
+
     init() {
         Task { await reload() }
         // Cheap enough to poll: a status call and one bind() per project.
@@ -80,6 +91,7 @@ final class BeaconModel: ObservableObject {
     init(
         previewRunning: Bool,
         trusted: Bool,
+        serviceVersion: String = BeaconPaths.version,
         sites: [Site] = [],
         onlinePorts: Set<Int> = [],
         activity: Activity? = nil,
@@ -90,7 +102,7 @@ final class BeaconModel: ObservableObject {
     ) {
         self.status = previewRunning
             ? DaemonStatus(
-                version: BeaconPaths.version, pid: 4242, httpPort: 80, httpsPort: 443, dnsPort: 53535,
+                version: serviceVersion, pid: 4242, httpPort: 80, httpsPort: 443, dnsPort: 53535,
                 tlds: ["test"], resolversInstalled: ["test"], siteCount: sites.count,
                 startedAt: Date().addingTimeInterval(-3600)
               )
@@ -320,7 +332,7 @@ final class BeaconModel: ObservableObject {
 
     func perform(_ action: PrivilegedAction, purge: Bool = false) async -> ActionOutcome {
         switch action {
-        case .install: return await installService()
+        case .install, .update: return await installService()
         case .trust: return await trustCertificate()
         case .uninstall: return await uninstall(purge: purge)
         }

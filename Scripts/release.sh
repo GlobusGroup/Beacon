@@ -17,6 +17,17 @@
 #
 # Signing uses the team's Developer ID (DQQ2V9BUW7) via automatic signing and
 # -allowProvisioningUpdates.
+#
+# App updates (Sparkle) come from the GitHub release itself: each one carries
+# Beacon.dmg and an appcast.xml, and SUFeedURL in Beacon-Info.plist points at
+# releases/latest/download/appcast.xml. One-time setup, the update signing
+# key: once for the team, kept in the releaser's login keychain. Generate it
+# with Sparkle's generate_keys (in build/SourcePackages/artifacts/sparkle/
+# Sparkle/bin after a build) and put the public key it prints in
+# Beacon-Info.plist as SUPublicEDKey. Another releaser imports the private key
+# with `generate_keys -f <file>` after the first exports it with
+# `generate_keys -x <file>`. Losing it means installed copies can't update;
+# keep a backup.
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -28,6 +39,10 @@ TEAM_ID="DQQ2V9BUW7"
 NOTARY_PROFILE="${BEACON_NOTARY_PROFILE:-skillet-notary}"
 REPO="GlobusGroup/Beacon"
 BUILD_DIR="$PROJECT_DIR/build/release"
+# Outside BUILD_DIR, which each run wipes, so Sparkle isn't fetched every time.
+SOURCE_PACKAGES="$PROJECT_DIR/build/SourcePackages"
+SPARKLE_BIN="$SOURCE_PACKAGES/artifacts/sparkle/Sparkle/bin"
+INFO_PLIST="$PROJECT_DIR/Beacon-Info.plist"
 
 VERSION="${1:?Usage: release.sh <version> [--dry-run] [--notes-file <path>]}"
 shift
@@ -67,6 +82,20 @@ if [ "$DRY_RUN" -eq 0 ]; then
     echo "Notary profile '$NOTARY_PROFILE' not found. One-time setup:" >&2
     echo "  xcrun notarytool store-credentials $NOTARY_PROFILE --apple-id <apple-id> --team-id $TEAM_ID --password <app-specific-password>" >&2
     exit 1; }
+
+  # Installed copies only accept an update signed by the key whose public half
+  # they carry, so a mismatch here would strand everyone on this version.
+  xcodebuild -resolvePackageDependencies -project "$PROJECT_DIR/Beacon.xcodeproj" \
+    -clonedSourcePackagesDirPath "$SOURCE_PACKAGES" -quiet
+  PLIST_KEY=$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$INFO_PLIST")
+  KEYCHAIN_KEY=$("$SPARKLE_BIN/generate_keys" -p 2>/dev/null) || {
+    echo "No Sparkle signing key in your keychain. See the setup notes at the top of this script." >&2
+    exit 1; }
+  [ "$PLIST_KEY" = "$KEYCHAIN_KEY" ] || {
+    echo "SUPublicEDKey in Beacon-Info.plist doesn't match the Sparkle key in your keychain." >&2
+    echo "  plist:    $PLIST_KEY" >&2
+    echo "  keychain: $KEYCHAIN_KEY" >&2
+    exit 1; }
 fi
 
 step "Set version $VERSION in project"
@@ -91,6 +120,7 @@ xcodebuild archive \
   -configuration Release \
   -destination 'generic/platform=macOS' \
   -archivePath "$ARCHIVE" \
+  -clonedSourcePackagesDirPath "$SOURCE_PACKAGES" \
   -allowProvisioningUpdates \
   -quiet
 
@@ -128,6 +158,13 @@ for tool in beacond beacon; do
     echo "$info" >&2
     exit 1; }
 done
+# Sparkle's helpers do the installing, so they need the same signature.
+SPARKLE_FW="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
+for helper in Autoupdate Updater.app XPCServices/Downloader.xpc XPCServices/Installer.xpc; do
+  [ -e "$SPARKLE_FW/$helper" ] || continue
+  codesign -dvv "$SPARKLE_FW/$helper" 2>&1 | grep -q "Authority=Developer ID Application" || {
+    echo "Sparkle's $helper isn't Developer ID signed." >&2; exit 1; }
+done
 
 step "Build DMG"
 "$SCRIPT_DIR/make-dmg.sh" "$APP" "$DMG"
@@ -144,6 +181,42 @@ xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait
 xcrun stapler staple "$DMG"
 spctl --assess --type open --context context:primary-signature -v "$DMG"
 
+# Written before the release commit, so HEAD is still the last change in it.
+if [ -z "$NOTES_FILE" ]; then
+  NOTES_FILE="$BUILD_DIR/notes.md"
+  LAST_TAG=$(git describe --tags --abbrev=0 HEAD 2>/dev/null || true)
+  if [ -n "$LAST_TAG" ]; then
+    git log --pretty='- %s' "$LAST_TAG..HEAD" > "$NOTES_FILE"
+  else
+    echo "Initial release." > "$NOTES_FILE"
+  fi
+fi
+
+step "Sign update + write appcast"
+# Signs the stapled DMG, the exact bytes installed copies will download.
+ENCLOSURE_SIGNATURE=$("$SPARKLE_BIN/sign_update" "$DMG")
+MIN_MACOS=$(sed -n 's/.*MACOSX_DEPLOYMENT_TARGET = \([^;]*\);.*/\1/p' "$PBXPROJ" | head -1)
+# Only the newest release: Sparkle needs nothing else. The DMG URL names the
+# tag, so it keeps working after later releases.
+cat > "$BUILD_DIR/appcast.xml" <<XML
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>Beacon</title>
+    <item>
+      <title>Beacon $VERSION</title>
+      <pubDate>$(LC_ALL=C date -u '+%a, %d %b %Y %H:%M:%S +0000')</pubDate>
+      <sparkle:version>$NEW_BUILD_NUM</sparkle:version>
+      <sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>$MIN_MACOS</sparkle:minimumSystemVersion>
+      <description sparkle:format="plain-text"><![CDATA[$(sed 's/]]>/]]]]><![CDATA[>/g' "$NOTES_FILE")]]></description>
+      <enclosure url="https://github.com/$REPO/releases/download/$TAG/Beacon.dmg" type="application/octet-stream" $ENCLOSURE_SIGNATURE />
+    </item>
+  </channel>
+</rss>
+XML
+xmllint --noout "$BUILD_DIR/appcast.xml"
+
 step "Commit, tag, push"
 git add "$PBXPROJ" "$PATHS_SWIFT"
 git commit -m "Release $VERSION"
@@ -151,22 +224,22 @@ git tag "$TAG"
 git push origin HEAD "$TAG"
 
 step "Create GitHub release"
-if [ -z "$NOTES_FILE" ]; then
-  NOTES_FILE="$BUILD_DIR/notes.md"
-  LAST_TAG=$(git describe --tags --abbrev=0 "$TAG^" 2>/dev/null || true)
-  if [ -n "$LAST_TAG" ]; then
-    git log --pretty='- %s' "$LAST_TAG..$TAG^" > "$NOTES_FILE"
-  else
-    echo "Initial release." > "$NOTES_FILE"
-  fi
-fi
 # Upload under a stable filename so the README's
-# releases/latest/download/Beacon.dmg link never needs updating.
+# releases/latest/download/Beacon.dmg link never needs updating. Installed
+# copies find this release through its appcast.xml.
 cp "$DMG" "$BUILD_DIR/Beacon.dmg"
-gh release create "$TAG" "$BUILD_DIR/Beacon.dmg" \
+gh release create "$TAG" "$BUILD_DIR/Beacon.dmg" "$BUILD_DIR/appcast.xml" \
   --repo "$REPO" \
   --title "Beacon $VERSION" \
   --notes-file "$NOTES_FILE"
+
+step "Check the update feed"
+# What installed copies read. Fails while the repo is private, since Sparkle
+# can't sign in to GitHub.
+curl -fsSL "https://github.com/$REPO/releases/latest/download/appcast.xml" \
+  | grep -q "<sparkle:shortVersionString>$VERSION<" || {
+  echo "The release is up, but releases/latest/download/appcast.xml doesn't serve $VERSION publicly." >&2
+  exit 1; }
 
 step "Done"
 gh release view "$TAG" --repo "$REPO" --json url -q .url
