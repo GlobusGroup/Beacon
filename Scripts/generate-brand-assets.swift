@@ -95,38 +95,102 @@ let amber = recoloured(trimmed(load("beacon-symbol-amber.png")), red: signal.r, 
 let black = trimmed(load("beacon-symbol-black.png"))
 let wordmark = trimmed(load("beacon-wordmark.png"))
 
-// MARK: App icon — amber symbol on an Ink squircle, as in the concept board.
+// MARK: Vector symbol. The kit's PNGs are generated rasters with soft edges,
+// so the app icon redraws the mark from its geometry instead: two round-capped
+// arcs over a pill. Units are the kit PNGs' 1254 px canvas, y down; the values
+// were fitted to beacon-symbol-black.png (about 97% overlap per arc).
 
-let iconMaster = render(width: 1024, height: 1024) { context in
-    // macOS icon grid: 824pt body inset 100pt, with the system's drop shadow.
-    let body = CGRect(x: 100, y: 100, width: 824, height: 824)
-    let path = CGPath(roundedRect: body, cornerWidth: 185, cornerHeight: 185, transform: nil)
-    context.saveGState()
-    context.setShadow(offset: CGSize(width: 0, height: -10), blur: 24,
-                      color: CGColor(gray: 0, alpha: 0.32))
-    context.addPath(path)
-    context.setFillColor(ink)
-    context.fillPath()
-    context.restoreGState()
-    // One stem-width of clear space is the guide's minimum; the icon gets more.
-    drawFitted(amber, in: body.insetBy(dx: 190, dy: 170), context: context)
+struct Arc { let centreY, radius, halfAngle, width: Double }
+let markCentreX = 625.5
+let outerArc = Arc(centreY: 783, radius: 550.5, halfAngle: 37.6, width: 155)
+let innerArc = Arc(centreY: 883, radius: 383, halfAngle: 34.4, width: 150)
+let stem = (x: 510.0, y: 665.0, width: 231.0, height: 440.0)
+/// The mark's extent, caps included, on the same canvas.
+let markBounds = CGRect(x: 209, y: 154, width: 835, height: 952)
+
+func arcEnds(_ arc: Arc) -> (start: CGPoint, end: CGPoint) {
+    let dx = sin(arc.halfAngle * .pi / 180) * arc.radius
+    let y = arc.centreY - cos(arc.halfAngle * .pi / 180) * arc.radius
+    return (CGPoint(x: markCentreX - dx, y: y), CGPoint(x: markCentreX + dx, y: y))
 }
 
-let iconDir = assets.appendingPathComponent("AppIcon.appiconset")
-var iconImages: [[String: String]] = []
-for points in [16, 32, 128, 256, 512] {
-    for scale in [1, 2] {
-        let pixels = points * scale
-        let name = "icon_\(points)x\(points)\(scale == 2 ? "@2x" : "").png"
-        let sized = render(width: pixels, height: pixels) { context in
-            context.draw(iconMaster, in: CGRect(x: 0, y: 0, width: pixels, height: pixels))
-        }
-        write(sized, to: iconDir.appendingPathComponent(name))
-        iconImages.append(["idiom": "mac", "size": "\(points)x\(points)", "scale": "\(scale)x", "filename": name])
+/// The symbol as SVG, scaled by `scale` and offset by `offset` (in output units).
+func symbolSVG(fill: String, scale: Double, offset: CGPoint) -> String {
+    func n(_ v: Double) -> String { String(format: "%.2f", v) }
+    func arcPath(_ arc: Arc) -> String {
+        let (a, b) = arcEnds(arc)
+        return "<path d=\"M\(n(a.x)) \(n(a.y)) A\(n(arc.radius)) \(n(arc.radius)) 0 0 1 \(n(b.x)) \(n(b.y))\" "
+            + "stroke-width=\"\(n(arc.width))\"/>"
     }
+    return """
+    <g transform="translate(\(n(offset.x)) \(n(offset.y))) scale(\(String(format: "%.5f", scale)))">
+      <g fill="none" stroke="\(fill)" stroke-linecap="round">
+        \(arcPath(outerArc))
+        \(arcPath(innerArc))
+      </g>
+      <rect x="\(n(stem.x))" y="\(n(stem.y))" width="\(n(stem.width))" height="\(n(stem.height))" rx="\(n(stem.width / 2))" fill="\(fill)"/>
+    </g>
+    """
 }
-writeJSON(["images": iconImages, "info": ["author": "xcode", "version": 1]],
-          to: iconDir.appendingPathComponent("Contents.json"))
+
+func writeText(_ text: String, to url: URL) {
+    try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try! text.write(to: url, atomically: true, encoding: .utf8)
+}
+
+// A standalone vector master, which the kit doesn't include.
+writeText("""
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="\(markBounds.minX) \(markBounds.minY) \(markBounds.width) \(markBounds.height)" width="\(markBounds.width)" height="\(markBounds.height)">
+\(symbolSVG(fill: "#F5B544", scale: 1, offset: .zero))
+</svg>
+
+""", to: repo.appendingPathComponent("Brand/vector/beacon-symbol.svg"))
+
+// MARK: App icon — amber symbol on Ink, as in the concept board, built as an
+// Icon Composer document so macOS 26+ renders it natively (Liquid Glass, dark
+// and tinted variants) instead of boxing a legacy bitmap. actool compiles it
+// into Assets.car and AppIcon.icns, so no PNG sizes are needed.
+
+let iconCanvas = 1024.0
+// The mark sits at 54% of the canvas height, centred: inside the system's
+// safe area with room for the glass edge, and close to the concept board.
+let glyphScale = iconCanvas * 0.54 / markBounds.height
+let glyphOffset = CGPoint(
+    x: iconCanvas / 2 - markBounds.midX * glyphScale,
+    y: iconCanvas / 2 - markBounds.midY * glyphScale
+)
+let iconDoc = repo.appendingPathComponent("Beacon/AppIcon.icon")
+try? FileManager.default.removeItem(at: iconDoc)
+try? FileManager.default.removeItem(at: assets.appendingPathComponent("AppIcon.appiconset"))
+writeText("""
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+\(symbolSVG(fill: "#F5B544", scale: glyphScale, offset: glyphOffset))
+</svg>
+
+""", to: iconDoc.appendingPathComponent("Assets/symbol.svg"))
+
+func extendedSRGB(_ red: Double, _ green: Double, _ blue: Double) -> String {
+    // Icon Composer stores sRGB palette values as extended sRGB.
+    String(format: "extended-srgb:%.5f,%.5f,%.5f,1.00000", red, green, blue)
+}
+writeJSON([
+    // Ink, lifted slightly at the top so the surface reads as a material.
+    "fill": [
+        "linear-gradient": [extendedSRGB(38 / 255, 43 / 255, 49 / 255), extendedSRGB(24 / 255, 28 / 255, 32 / 255)],
+        "orientation": ["start": ["x": 0.5, "y": 0], "stop": ["x": 0.5, "y": 0.7]],
+    ],
+    "groups": [[
+        "layers": [[
+            "image-name": "symbol.svg",
+            "name": "symbol",
+            "position": ["scale": 1, "translation-in-points": [0, 0]],
+        ]],
+        "shadow": ["kind": "neutral", "opacity": 0.5],
+        // Translucency off keeps the mark at full Signal amber.
+        "translucency": ["enabled": false, "value": 0.5],
+    ]],
+    "supported-platforms": ["squares": ["macOS"]],
+], to: iconDoc.appendingPathComponent("icon.json"))
 
 // MARK: Menu bar — the monochrome symbol as a template image, so macOS
 // colours it. An 18pt canvas with the mark 16pt tall matches system extras.

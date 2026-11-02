@@ -18,8 +18,11 @@ for tool in beacond beacon; do
     cp -f "$SRCROOT/.build/release/$tool" "$DEST/$tool"
     # Sign with the app's identity so the bundle seals cleanly and the
     # installed daemon carries a real signature, not SwiftPM's ad-hoc one.
+    # Archives (ACTION=install) get a secure timestamp, which notarization
+    # requires; everyday builds skip it to stay offline and fast.
     if [ -n "${EXPANDED_CODE_SIGN_IDENTITY:-}" ] && [ "$EXPANDED_CODE_SIGN_IDENTITY" != "-" ]; then
-        /usr/bin/codesign --force --options runtime --timestamp=none \
+        if [ "${ACTION:-build}" = "install" ]; then timestamp=--timestamp; else timestamp=--timestamp=none; fi
+        /usr/bin/codesign --force --options runtime "$timestamp" \
             --sign "$EXPANDED_CODE_SIGN_IDENTITY" "$DEST/$tool"
     fi
 done

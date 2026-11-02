@@ -4,7 +4,7 @@ DERIVED := $(CURDIR)/.xcode
 APP     := $(DERIVED)/Build/Products/Release/Beacon.app
 SANDBOX := /tmp/beacon-dev
 
-.PHONY: all build app install uninstall reinstall restart dev dev-stop logs clean
+.PHONY: all build app dmg install uninstall reinstall restart dev dev-stop logs clean
 
 all: build app
 
@@ -17,6 +17,11 @@ app:
 	xcodebuild -project Beacon.xcodeproj -scheme Beacon -configuration Release \
 		-derivedDataPath $(DERIVED) build | tail -3
 	@echo "Built $(APP)"
+
+## Signed DMG in build/release, without notarising or publishing.
+## Leaves the version bump uncommitted; release with Scripts/release.sh.
+dmg:
+	Scripts/release.sh $(or $(VERSION),$(shell sed -n 's/.*static let version = "\(.*\)".*/\1/p' Beacon/Shared/BeaconPaths.swift)) --dry-run
 
 ## Install the background service, the CLI and the DNS resolvers. Asks for your password.
 install: build

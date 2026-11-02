@@ -32,8 +32,9 @@ server at the port it gets, and hand you `https://shop.test` instead of
 
 ## Install
 
-Build the app with `make app` (or open `Beacon.xcodeproj` and run it), then
-open `Beacon.app`. The daemon and the `beacon` command are bundled inside it,
+Download [Beacon.dmg](https://github.com/GlobusGroup/Beacon/releases/latest/download/Beacon.dmg),
+open it and drag Beacon into Applications. Or build the app yourself with
+`make app` (or open `Beacon.xcodeproj` and run it), then open `Beacon.app`. The daemon and the `beacon` command are bundled inside it,
 under `Contents/Helpers`.
 
 On first launch a setup window walks through two one-time steps. Each one is
@@ -68,8 +69,9 @@ make install
 The administrator prompt can't offer Touch ID. Installing a root service goes
 through `AuthorizationExecuteWithPrivileges`, whose dialog is password-only;
 Laravel Herd asks for a typed password at the same point, for the same reason.
-Its note that macOS "could not verify" Beacon appears because builds aren't
-notarised. The certificate step is per-user and does accept Touch ID.
+Its note that macOS "could not verify" Beacon appears on local builds, which
+aren't notarised; released DMGs are. The certificate step is per-user and does
+accept Touch ID.
 
 ## Using it
 
@@ -269,3 +271,20 @@ Beacon.xcodeproj         the app
 `Beacon/Shared` is a SwiftPM target *and* part of the app's synchronized file
 group, so the app and the service share one definition of the wire format
 without the Xcode project needing a package reference.
+
+## Releasing
+
+`Scripts/release.sh <version>` sets the version, archives, exports a
+Developer ID-signed app, builds a styled DMG, notarises and staples it, then
+tags the commit and publishes a GitHub release with `Beacon.dmg` attached.
+Add `--dry-run` to stop after the signed DMG, with nothing committed or
+pushed. It needs `create-dmg` (`brew install create-dmg`) and a notary
+profile; the script's header has the one-time setup.
+
+The app icon (`Beacon/AppIcon.icon`, an Icon Composer document) and the DMG
+background are generated from `Brand/`:
+
+```bash
+swift Scripts/generate-brand-assets.swift
+swift Scripts/render-dmg-background.swift
+```
