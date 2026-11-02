@@ -8,7 +8,7 @@ import Foundation
 /// the real system.
 public enum BeaconPaths {
     public static let label = "io.beacon.daemon"
-    public static let version = "1.2.0"
+    public static let version = "1.2.1"
 
     public static let sandboxRoot = ProcessInfo.processInfo.environment["BEACON_ROOT"]
 
