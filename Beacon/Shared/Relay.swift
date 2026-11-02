@@ -1,7 +1,7 @@
 import Foundation
 
 /// Sharing a project on the public internet through a Beacon relay, e.g.
-/// `https://shop-dean.beacon.cab`. The daemon keeps one tunnel open to the
+/// `https://shop-dean.relay.example.com`. The daemon keeps one tunnel open to the
 /// relay while anything is shared.
 
 /// A request to share one project.

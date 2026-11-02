@@ -61,9 +61,9 @@ enum SnapshotRenderer {
         let sharing = BeaconModel(
             previewRunning: true, trusted: true, sites: projects, onlinePorts: [3101, 3102],
             relay: RelayStatus(
-                url: "beacon.cab", hasToken: true, state: .connected, label: "dean",
+                url: "relay.example.com", hasToken: true, state: .connected, label: "dean",
                 shares: [
-                    SharedProject(name: "studio", publicURL: "https://studio-dean.beacon.cab", passwordProtected: false),
+                    SharedProject(name: "studio", publicURL: "https://studio-dean.relay.example.com", passwordProtected: false),
                     SharedProject(name: "shop", passwordProtected: true),
                 ]
             )
@@ -71,7 +71,7 @@ enum SnapshotRenderer {
         let relayFailed = BeaconModel(
             previewRunning: true, trusted: true, sites: projects,
             relay: RelayStatus(
-                url: "beacon.cab", hasToken: true, state: .failed,
+                url: "relay.example.com", hasToken: true, state: .failed,
                 error: "The relay rejected the token.", shares: [SharedProject(name: "studio", passwordProtected: false)]
             )
         )

@@ -4,7 +4,7 @@ import Foundation
 /// Everything the relay is told through its environment, usually a `.env`
 /// file read by Docker Compose.
 struct RelayConfig {
-    /// The apex the relay owns, e.g. `beacon.cab`. Shares live one level below it.
+    /// The apex the relay owns, e.g. `relay.example.com`. Shares live one level below it.
     var domain: String
     /// Port the relay listens on for plain HTTP from Traefik.
     var port: Int
@@ -32,7 +32,7 @@ struct RelayConfig {
 
     static func fromEnvironment(_ env: [String: String] = ProcessInfo.processInfo.environment) throws -> RelayConfig {
         guard let rawDomain = env["BEACON_DOMAIN"], !rawDomain.isEmpty else {
-            throw Problem.missing("BEACON_DOMAIN isn't set. It should be the apex the relay owns, e.g. beacon.cab.")
+            throw Problem.missing("BEACON_DOMAIN isn't set. It should be the apex the relay owns, e.g. relay.example.com.")
         }
         let domain = rawDomain.trimmingCharacters(in: CharacterSet(charactersIn: ". ")).lowercased()
 

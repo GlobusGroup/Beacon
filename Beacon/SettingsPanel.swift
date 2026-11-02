@@ -101,7 +101,7 @@ struct SettingsPanel: View {
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 LabeledContent("Relay") {
-                    TextField("", text: $relayURL, prompt: Text("beacon.cab"))
+                    TextField("", text: $relayURL, prompt: Text("relay.example.com"))
                         .font(.beaconMono)
                         .multilineTextAlignment(.trailing)
                 }

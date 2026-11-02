@@ -8,14 +8,14 @@ extension BeaconCLI {
             abstract: "Put a project on a public URL through your Beacon relay.",
             discussion: """
             The project gets <name>-<label>.<relay domain>, where the label is the \
-            one your token carries on the relay, e.g. https://shop-dean.beacon.cab. \
+            one your token carries on the relay, e.g. https://shop-dean.relay.example.com. \
             The URL stays the same every time you share it.
 
             Beacon keeps sharing it, across restarts, until `beacon unshare`. Run \
             `beacon relay` once first to say which relay to use.
 
             Dev servers that check the Host header need to allow the relay's \
-            domain: in Vite, `server.allowedHosts: ['.beacon.cab']`.
+            domain: in Vite, `server.allowedHosts: ['.relay.example.com']`.
             """
         )
 
@@ -103,14 +103,14 @@ extension BeaconCLI {
         static let configuration = CommandConfiguration(
             abstract: "Show or set the relay that public URLs come from.",
             discussion: """
-            beacon relay --url beacon.cab --token <token>
+            beacon relay --url relay.example.com --token <token>
 
             The token comes from whoever runs the relay. It's stored readable by \
             root only, and sent to nothing but the relay.
             """
         )
 
-        @Option(name: .long, help: "The relay's domain, e.g. beacon.cab, or a wss:// URL.")
+        @Option(name: .long, help: "The relay's domain, e.g. relay.example.com, or a wss:// URL.")
         var url: String?
 
         @Option(name: .long, help: "Your token for that relay.")
@@ -168,7 +168,7 @@ extension BeaconCLI {
             }
             print("")
             if status.state == .off {
-                print("  Set one up with \(Output.bold("beacon relay --url beacon.cab --token <token>")).")
+                print("  Set one up with \(Output.bold("beacon relay --url relay.example.com --token <token>")).")
                 print("")
             } else if status.shares.isEmpty {
                 print("  Nothing is shared. Share a project with \(Output.bold("beacon share")).")

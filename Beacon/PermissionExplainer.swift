@@ -157,9 +157,7 @@ struct PermissionExplainer: View {
                 ],
                 promptSymbol: "person.badge.key",
                 promptTitle: "“Allow administrator access for Beacon?”",
-                // The verification note is macOS's wording for apps that
-                // aren't notarised. Revisit this line once builds are.
-                promptDetail: "Enter your Mac login password and click Allow Access. macOS also says it couldn't verify Beacon — it says that about any app that hasn't been notarised by Apple.",
+                promptDetail: "Enter your Mac login password and click Allow Access.",
                 footnote: "Adding projects, changing settings and restarting the service never ask for a password."
             )
 

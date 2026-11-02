@@ -16,7 +16,7 @@ struct RelaySettings: Codable {
 }
 
 /// The address a tunnel dials, parsed from whatever form the user typed:
-/// `beacon.cab`, `wss://beacon.cab`, or `ws://127.0.0.1:8090` for testing.
+/// `relay.example.com`, `wss://relay.example.com`, or `ws://127.0.0.1:8090` for testing.
 struct RelayTarget: Equatable {
     var tls: Bool
     var host: String
@@ -91,7 +91,7 @@ final class TunnelClient: @unchecked Sendable {
         if let url = spec.url, !url.isEmpty, RelayTarget(url) == nil {
             throw BeaconClientError(
                 code: "bad_relay_url",
-                message: "'\(url)' isn't a relay address. Use a domain like beacon.cab, or a wss:// URL."
+                message: "'\(url)' isn't a relay address. Use a domain like relay.example.com, or a wss:// URL."
             )
         }
         return try mutate { settings in
@@ -107,7 +107,7 @@ final class TunnelClient: @unchecked Sendable {
         guard lock.withLock({ settings.isConfigured }) else {
             throw BeaconClientError(
                 code: "relay_not_configured",
-                message: "No relay is set up. Run `beacon relay --url beacon.cab --token <token>` first."
+                message: "No relay is set up. Run `beacon relay --url relay.example.com --token <token>` first."
             )
         }
         let password = spec.password.flatMap { $0.isEmpty ? nil : $0 }
