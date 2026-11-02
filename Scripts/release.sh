@@ -59,6 +59,8 @@ if [ "$DRY_RUN" -eq 0 ]; then
     echo "Tag $TAG already exists." >&2; exit 1; }
   # gh keychain tokens are often unreadable in scripted shells; export explicitly.
   export GH_TOKEN=$(gh auth token)
+  # Print gh output straight to the terminal so the script ends at the prompt.
+  export GH_PAGER=cat
   gh release view --repo "$REPO" "$TAG" >/dev/null 2>&1 && {
     echo "Release $TAG already exists on GitHub." >&2; exit 1; }
   xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>&1 || {
