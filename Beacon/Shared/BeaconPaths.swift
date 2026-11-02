@@ -46,6 +46,9 @@ public enum BeaconPaths {
     public static let daemonBinary = "/usr/local/libexec/beacon/beacond"
     public static let cliBinary = "/usr/local/bin/beacon"
     public static let launchDaemonPlist = "/Library/LaunchDaemons/\(label).plist"
+    /// The fingerprint of the sources the installed daemon was built from,
+    /// copied from the app that installed it.
+    public static let installedFingerprint = "/usr/local/libexec/beacon/service-fingerprint"
 
     public static func resolverFile(for tld: String) -> String { resolverDir + "/" + tld }
 }

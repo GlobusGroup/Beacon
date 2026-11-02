@@ -84,11 +84,23 @@ final class BeaconModel: ObservableObject {
 
     var needsSetup: Bool { !isRunning || !caTrusted }
 
+    /// The fingerprint of the sources the installed service was built from.
+    /// Nil when it was installed without one: by `make install`, or by a
+    /// Beacon from before fingerprints.
+    @Published private(set) var installedFingerprint: String?
+    private static let bundledFingerprint = BeaconInstaller.bundledFingerprint()
+
     /// The running service isn't the one this app carries, usually because
-    /// Sparkle updated the app. Different rather than older: a downgraded app
-    /// should put its own service back too.
+    /// Sparkle updated the app. Compared by fingerprint, so a release that
+    /// didn't touch the service doesn't ask for a password. Without both
+    /// fingerprints it falls back to the version, which every release bumps.
+    /// Different rather than older: a downgraded app should put its own
+    /// service back too.
     var serviceOutdated: Bool {
         guard let status else { return false }
+        if let bundled = Self.bundledFingerprint, let installed = installedFingerprint {
+            return bundled != installed
+        }
         return status.version != BeaconPaths.version
     }
 
@@ -173,7 +185,8 @@ final class BeaconModel: ObservableObject {
             let relay = status == nil ? nil : (try? client.relayStatus()) ?? nil
             // A couple of stat() calls and two small reads.
             let agents = AgentInstructions.installedAgents()
-            return (status, sites, config, running, trusted, runnable, relay, agents)
+            let fingerprint = BeaconInstaller.installedFingerprint()
+            return (status, sites, config, running, trusted, runnable, relay, agents, fingerprint)
         }.value
 
         status = snapshot.0
@@ -184,6 +197,7 @@ final class BeaconModel: ObservableObject {
         runnable = snapshot.5
         relay = snapshot.6
         agents = snapshot.7
+        installedFingerprint = snapshot.8
         hasLoaded = true
 
         // A project the menu started that has since gone down (or been
@@ -382,7 +396,10 @@ final class BeaconModel: ObservableObject {
         let client = self.client
         let outcome: ActionOutcome = await Task.detached {
             let result = Shell.runAsAdmin(
-                script: BeaconInstaller.installScript(daemonSource: daemon, cliSource: cli),
+                script: BeaconInstaller.installScript(
+                    daemonSource: daemon, cliSource: cli,
+                    fingerprintSource: Bundle.main.url(forResource: "service-fingerprint", withExtension: nil)?.path
+                ),
                 prompt: "Beacon needs administrator access to serve projects on ports 80 and 443."
             )
             if result.wasCancelled { return .cancelled }

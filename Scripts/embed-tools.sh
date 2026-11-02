@@ -26,3 +26,19 @@ for tool in beacond beacon; do
             --sign "$EXPANDED_CODE_SIGN_IDENTITY" "$DEST/$tool"
     fi
 done
+
+# A fingerprint of everything the daemon and CLI are built from, minus the
+# version number every release bumps. Installing the service copies it next
+# to the daemon, and the app only asks to update the service when its own
+# fingerprint differs, not on every release.
+cd "$SRCROOT"
+{
+    for f in Package.swift Package.resolved $(find Sources/beacond Sources/beacon Sources/BeaconTunnel Beacon/Shared -type f -name '*.swift' | LC_ALL=C sort); do
+        echo "== $f"
+        if [ "$f" = Beacon/Shared/BeaconPaths.swift ]; then
+            grep -v 'static let version = ' "$f"
+        else
+            cat "$f"
+        fi
+    done
+} | /usr/bin/shasum -a 256 | cut -c1-16 > "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/service-fingerprint"

@@ -246,7 +246,23 @@ public enum BeaconInstaller {
 
     /// The script that performs a full install. Run it as root directly, or hand
     /// it to `Shell.runAsAdmin` to get the system authorisation prompt.
-    public static func installScript(daemonSource: String, cliSource: String?) -> String {
+    /// The app's fingerprint of the daemon and CLI sources, written by the
+    /// embed build phase. Nil outside the app, e.g. for `make install`.
+    public static func bundledFingerprint() -> String? {
+        Bundle.main.url(forResource: "service-fingerprint", withExtension: nil).flatMap(readFingerprint(at:))
+    }
+
+    public static func installedFingerprint() -> String? {
+        readFingerprint(at: URL(fileURLWithPath: BeaconPaths.installedFingerprint))
+    }
+
+    private static func readFingerprint(at url: URL) -> String? {
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    public static func installScript(daemonSource: String, cliSource: String?, fingerprintSource: String? = nil) -> String {
         var lines = [
             "set -e",
             "mkdir -p /usr/local/libexec/beacon",
@@ -263,6 +279,16 @@ public enum BeaconInstaller {
                 "cp -f '\(cliSource)' '\(BeaconPaths.cliBinary)'",
                 "chmod 755 '\(BeaconPaths.cliBinary)'",
             ]
+        }
+        // Without one, drop any old fingerprint rather than vouch for a
+        // daemon it doesn't describe.
+        if let fingerprintSource {
+            lines += [
+                "cp -f '\(fingerprintSource)' '\(BeaconPaths.installedFingerprint)'",
+                "chmod 644 '\(BeaconPaths.installedFingerprint)'",
+            ]
+        } else {
+            lines.append("rm -f '\(BeaconPaths.installedFingerprint)'")
         }
         lines += [
             "'\(BeaconPaths.daemonBinary)' write-plist > '\(BeaconPaths.launchDaemonPlist)'",
