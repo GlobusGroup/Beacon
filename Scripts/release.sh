@@ -21,13 +21,16 @@
 # App updates (Sparkle) come from the GitHub release itself: each one carries
 # Beacon.dmg and an appcast.xml, and SUFeedURL in Beacon-Info.plist points at
 # releases/latest/download/appcast.xml. One-time setup, the update signing
-# key: once for the team, kept in the releaser's login keychain. Generate it
-# with Sparkle's generate_keys (in build/SourcePackages/artifacts/sparkle/
-# Sparkle/bin after a build) and put the public key it prints in
-# Beacon-Info.plist as SUPublicEDKey. Another releaser imports the private key
-# with `generate_keys -f <file>` after the first exports it with
-# `generate_keys -x <file>`. Losing it means installed copies can't update;
-# keep a backup.
+# key: once for the team, kept in the releaser's login keychain under the
+# account "beacon", so it can't be confused with another app's Sparkle key.
+# Generate it with Sparkle's generate_keys (in build/SourcePackages/artifacts/
+# sparkle/Sparkle/bin after a build):
+#   generate_keys --account beacon
+# and put the public key it prints in Beacon-Info.plist as SUPublicEDKey.
+# Another releaser imports the private key with
+# `generate_keys --account beacon -f <file>` after the first exports it with
+# `generate_keys --account beacon -x <file>`. Losing it means installed copies
+# can't update; keep a backup.
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -43,6 +46,7 @@ BUILD_DIR="$PROJECT_DIR/build/release"
 SOURCE_PACKAGES="$PROJECT_DIR/build/SourcePackages"
 SPARKLE_BIN="$SOURCE_PACKAGES/artifacts/sparkle/Sparkle/bin"
 INFO_PLIST="$PROJECT_DIR/Beacon-Info.plist"
+SPARKLE_ACCOUNT="beacon"
 
 VERSION="${1:?Usage: release.sh <version> [--dry-run] [--notes-file <path>]}"
 shift
@@ -88,7 +92,7 @@ if [ "$DRY_RUN" -eq 0 ]; then
   xcodebuild -resolvePackageDependencies -project "$PROJECT_DIR/Beacon.xcodeproj" \
     -clonedSourcePackagesDirPath "$SOURCE_PACKAGES" -quiet
   PLIST_KEY=$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$INFO_PLIST")
-  KEYCHAIN_KEY=$("$SPARKLE_BIN/generate_keys" -p 2>/dev/null) || {
+  KEYCHAIN_KEY=$("$SPARKLE_BIN/generate_keys" --account "$SPARKLE_ACCOUNT" -p 2>/dev/null) || {
     echo "No Sparkle signing key in your keychain. See the setup notes at the top of this script." >&2
     exit 1; }
   [ "$PLIST_KEY" = "$KEYCHAIN_KEY" ] || {
@@ -194,7 +198,7 @@ fi
 
 step "Sign update + write appcast"
 # Signs the stapled DMG, the exact bytes installed copies will download.
-ENCLOSURE_SIGNATURE=$("$SPARKLE_BIN/sign_update" "$DMG")
+ENCLOSURE_SIGNATURE=$("$SPARKLE_BIN/sign_update" --account "$SPARKLE_ACCOUNT" "$DMG")
 MIN_MACOS=$(sed -n 's/.*MACOSX_DEPLOYMENT_TARGET = \([^;]*\);.*/\1/p' "$PBXPROJ" | head -1)
 # Only the newest release: Sparkle needs nothing else. The DMG URL names the
 # tag, so it keeps working after later releases.
