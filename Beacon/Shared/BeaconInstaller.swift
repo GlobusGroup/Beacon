@@ -228,8 +228,20 @@ public enum BeaconInstaller {
         candidates.append("/usr/local/libexec/beacon/\(name)")
         candidates.append("/usr/local/bin/\(name)")
 
+        return candidates.first(where: isExecutable(exactlyAt:))
+    }
+
+    /// Like `isExecutableFile(atPath:)`, but the file name must match case and all.
+    /// APFS is usually case-insensitive, so inside the app `Contents/MacOS/beacon`
+    /// would otherwise find the app's own `Beacon` executable and install that
+    /// as the CLI, where its signature (sealed to the bundle) no longer verifies.
+    static func isExecutable(exactlyAt path: String) -> Bool {
+        let url = URL(fileURLWithPath: path)
         let fm = FileManager.default
-        return candidates.first { fm.isExecutableFile(atPath: $0) }
+        guard fm.isExecutableFile(atPath: path),
+              let siblings = try? fm.contentsOfDirectory(atPath: url.deletingLastPathComponent().path)
+        else { return false }
+        return siblings.contains(url.lastPathComponent)
     }
 
     /// The script that performs a full install. Run it as root directly, or hand
