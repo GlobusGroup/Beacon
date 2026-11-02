@@ -33,6 +33,7 @@ struct SettingsPanel: View {
         Form {
             routingSection
             sharingSection
+            agentsSection
             serviceSection
             updatesSection
             uninstallSection
@@ -192,6 +193,40 @@ struct SettingsPanel: View {
             relayError = await model.setRelay(url: url, token: token)
             if relayError == nil { relayToken = "" }
             loadRelay(force: true)
+        }
+    }
+
+    // MARK: - Coding agents
+
+    private var agentsSection: some View {
+        Section {
+            if model.agents.isEmpty {
+                Text("Claude Code and Codex aren't set up for your user yet. Once one is, you can tell it about Beacon here.")
+                    .font(.beaconLabel)
+                    .foregroundStyle(Color.beaconSecondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                ForEach(model.agents, id: \.name) { agent in
+                    LabeledContent(agent.name) {
+                        if agent.hasInstructions {
+                            StatusLabel(text: "Knows about Beacon", tone: .online)
+                                .help(agent.file)
+                        } else {
+                            Button("Add instructions") {
+                                Task { await model.addAgentInstructions(to: [agent.name], confirmInMenu: false) }
+                            }
+                            .buttonStyle(.signalCompact)
+                            .help("Adds a section to \(agent.file)")
+                        }
+                    }
+                }
+                Text("Adds a short note to each agent's own instructions file, telling it to ask Beacon for a port and give you .\(model.config.primaryTLD) links. The same as `beacon agent-guide --global`.")
+                    .font(.beaconLabel)
+                    .foregroundStyle(Color.beaconSecondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } header: {
+            Text("Coding agents")
         }
     }
 

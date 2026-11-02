@@ -30,6 +30,10 @@ struct MenuPanel: View {
                 }
                     .padding(12)
                 Divider().overlay(Color.beaconHairline)
+            } else if model.showsAgentPrompt {
+                AgentPromptCard()
+                    .padding(12)
+                Divider().overlay(Color.beaconHairline)
             }
 
             if model.isRunning {
@@ -499,6 +503,73 @@ struct ServiceUpdateCard: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .beaconCard()
+    }
+}
+
+/// Offers to tell Claude Code and Codex about Beacon, once Beacon is set up,
+/// until the instructions are in or the user closes it.
+struct AgentPromptCard: View {
+    @EnvironmentObject private var model: BeaconModel
+
+    private var added: Bool { !model.agentsJustAdded.isEmpty }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(title)
+                    .font(.beaconBodyEmphasis)
+                    .foregroundStyle(Color.beaconText)
+                Spacer(minLength: 4)
+                Button { model.dismissAgentPrompt() } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .semibold))
+                }
+                .buttonStyle(.quiet)
+                .help(added ? "Close" : "Don't show this again. You can still add them in Settings.")
+            }
+
+            Text(detail)
+                .font(.beaconLabel)
+                .foregroundStyle(Color.beaconSecondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if added {
+                Button("Done") { model.dismissAgentPrompt() }
+                    .buttonStyle(.signalCompact)
+                    .padding(.top, 2)
+            } else {
+                Button("Add to \(list(model.agentsMissingInstructions.map(\.name)))") {
+                    Task { await model.addAgentInstructions() }
+                }
+                .buttonStyle(.signalCompact)
+                .help("The same as running beacon agent-guide --global")
+                .padding(.top, 2)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .beaconCard()
+    }
+
+    private var title: String {
+        guard added else { return "Tell your coding agents about Beacon" }
+        let names = model.agentsJustAdded
+        return "\(list(names)) \(names.count == 1 ? "knows" : "know") about Beacon"
+    }
+
+    private var detail: String {
+        guard added else {
+            let names = list(model.agentsMissingInstructions.map(\.name))
+            return "Beacon can add a short note to \(names) so they ask it for a port and give you .\(model.config.primaryTLD) links instead of localhost ones."
+        }
+        let files = model.agents
+            .filter { model.agentsJustAdded.contains($0.name) }
+            .map { ($0.file as NSString).abbreviatingWithTildeInPath }
+        return "New sessions will ask Beacon for a port. The note is in \(list(files)) if you want to change or remove it."
+    }
+
+    private func list(_ items: [String]) -> String {
+        ListFormatter.localizedString(byJoining: items)
     }
 }
 

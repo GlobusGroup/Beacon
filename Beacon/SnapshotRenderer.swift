@@ -32,6 +32,24 @@ enum SnapshotRenderer {
         let outdated = BeaconModel(
             previewRunning: true, trusted: true, serviceVersion: "1.0.0", sites: projects, onlinePorts: [3101]
         )
+        let agentsMissing = [
+            AgentInstructions.AgentStatus(name: "Claude Code", file: NSHomeDirectory() + "/.claude/CLAUDE.md", hasInstructions: false),
+            AgentInstructions.AgentStatus(name: "Codex", file: NSHomeDirectory() + "/.codex/AGENTS.md", hasInstructions: false),
+        ]
+        let agentsAdded = agentsMissing.map {
+            AgentInstructions.AgentStatus(name: $0.name, file: $0.file, hasInstructions: true)
+        }
+        let agentPrompt = BeaconModel(
+            previewRunning: true, trusted: true, sites: projects, onlinePorts: [3101, 3102], agents: agentsMissing
+        )
+        let agentPromptDone = BeaconModel(
+            previewRunning: true, trusted: true, sites: projects, onlinePorts: [3101, 3102],
+            agents: agentsAdded, agentsJustAdded: ["Claude Code", "Codex"]
+        )
+        let agentsMixed = BeaconModel(
+            previewRunning: true, trusted: true, sites: projects, onlinePorts: [3101],
+            agents: [agentsAdded[0], agentsMissing[1]]
+        )
         let outdatedFromMenu = BeaconModel(
             previewRunning: true, trusted: true, serviceVersion: "1.0.0", sites: projects, onlinePorts: [3101],
             settingsHighlight: .service
@@ -107,6 +125,9 @@ enum SnapshotRenderer {
             ("menu-10-service-outdated", AnyView(MenuPanel()), outdated),
             ("settings-service-outdated", AnyView(SettingsPanel()), outdated),
             ("settings-service-highlighted", AnyView(SettingsPanel()), outdatedFromMenu),
+            ("menu-11-agent-prompt", AnyView(MenuPanel()), agentPrompt),
+            ("menu-12-agent-prompt-done", AnyView(MenuPanel()), agentPromptDone),
+            ("settings-agents", AnyView(SettingsPanel()), agentsMixed),
         ]
         for action in [PrivilegedAction.install, .update, .trust, .uninstall] {
             shots.append(("explainer-\(action.rawValue)", AnyView(PermissionExplainer(action: action) { _ in }), ready))

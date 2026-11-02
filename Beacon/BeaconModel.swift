@@ -60,6 +60,14 @@ final class BeaconModel: ObservableObject {
     /// The tunnel to the relay and what's shared through it. Nil while the
     /// daemon is down, or when it predates sharing.
     @Published private(set) var relay: RelayStatus?
+    /// Claude Code and Codex, when they're set up for this user, and whether
+    /// each has Beacon's instructions yet.
+    @Published private(set) var agents: [AgentInstructions.AgentStatus] = []
+    /// The agents the menu's prompt just added the instructions to, so it can
+    /// say so before it goes away.
+    @Published private(set) var agentsJustAdded: [String] = []
+    /// The user closed the menu's coding agent prompt. Settings still offers it.
+    @Published private(set) var agentPromptDismissed = false
 
     private let client = BeaconClient()
     private var timer: Timer?
@@ -84,7 +92,10 @@ final class BeaconModel: ObservableObject {
         return status.version != BeaconPaths.version
     }
 
+    private static let agentPromptDismissedKey = "agentPromptDismissed"
+
     init() {
+        agentPromptDismissed = UserDefaults.standard.bool(forKey: Self.agentPromptDismissedKey)
         Task { await reload() }
         // Cheap enough to poll: a status call and one bind() per project.
         timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
@@ -108,7 +119,9 @@ final class BeaconModel: ObservableObject {
         runs: [String: RunStatus] = [:],
         runnable: Set<String> = [],
         relay: RelayStatus? = nil,
-        settingsHighlight: SettingsHighlight? = nil
+        settingsHighlight: SettingsHighlight? = nil,
+        agents: [AgentInstructions.AgentStatus] = [],
+        agentsJustAdded: [String] = []
     ) {
         self.status = previewRunning
             ? DaemonStatus(
@@ -126,6 +139,8 @@ final class BeaconModel: ObservableObject {
         self.runnable = runnable
         self.relay = relay
         self.settingsHighlight = settingsHighlight
+        self.agents = agents
+        self.agentsJustAdded = agentsJustAdded
         self.hasLoaded = true
     }
     #endif
@@ -156,7 +171,9 @@ final class BeaconModel: ObservableObject {
             // Detection reads the project directory, so it stays off the main actor.
             let runnable = Set(sites.filter { $0.runSpec != nil }.map(\.name))
             let relay = status == nil ? nil : (try? client.relayStatus()) ?? nil
-            return (status, sites, config, running, trusted, runnable, relay)
+            // A couple of stat() calls and two small reads.
+            let agents = AgentInstructions.installedAgents()
+            return (status, sites, config, running, trusted, runnable, relay, agents)
         }.value
 
         status = snapshot.0
@@ -166,6 +183,7 @@ final class BeaconModel: ObservableObject {
         caTrusted = snapshot.4
         runnable = snapshot.5
         relay = snapshot.6
+        agents = snapshot.7
         hasLoaded = true
 
         // A project the menu started that has since gone down (or been
@@ -503,6 +521,46 @@ final class BeaconModel: ObservableObject {
         }.value
         await reload()
         return failure
+    }
+
+    // MARK: - Coding agents
+
+    var agentsMissingInstructions: [AgentInstructions.AgentStatus] {
+        agents.filter { !$0.hasInstructions }
+    }
+
+    /// The menu offers this once Beacon is set up, until it's done or closed.
+    var showsAgentPrompt: Bool {
+        guard !agentPromptDismissed, isRunning, !needsSetup, !serviceOutdated else { return false }
+        return !agentsMissingInstructions.isEmpty || !agentsJustAdded.isEmpty
+    }
+
+    /// Appends Beacon's instructions to each agent's user-wide file, the same
+    /// as `beacon agent-guide --global`. Nil means every agent that hasn't
+    /// got them yet.
+    func addAgentInstructions(to names: [String]? = nil, confirmInMenu: Bool = true) async {
+        let targets = agentsMissingInstructions.filter { names?.contains($0.name) ?? true }
+        let tld = config.primaryTLD
+        let failure: String? = await Task.detached {
+            for agent in targets {
+                do {
+                    try AgentInstructions.append(to: agent.file, tld: tld)
+                } catch {
+                    return "Couldn't add Beacon's instructions to \(agent.file): \(error.localizedDescription)"
+                }
+            }
+            return nil
+        }.value
+
+        notice = failure
+        if failure == nil && confirmInMenu { agentsJustAdded = targets.map(\.name) }
+        await reload()
+    }
+
+    func dismissAgentPrompt() {
+        agentPromptDismissed = true
+        agentsJustAdded = []
+        UserDefaults.standard.set(true, forKey: Self.agentPromptDismissedKey)
     }
 
     // MARK: - Small things

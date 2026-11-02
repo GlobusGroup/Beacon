@@ -154,11 +154,19 @@ Anything under a project's domain goes to that project, so `admin.shop.test` rea
 
 ### Telling your coding agent
 
+Once Beacon is set up, the menu offers to add a short note to Claude Code and Codex. It tells them to get the port from Beacon rather than picking one, and to give you the `.test` URL instead of a `localhost` one. If you close the prompt, you can still add it later under **Settings → Coding agents**.
+
+The same thing from a terminal, for every project:
+
+```bash
+beacon agent-guide --global   # ~/.claude/CLAUDE.md and ~/.codex/AGENTS.md
+```
+
+Or just for one project, in its `CLAUDE.md`, or `AGENTS.md` if that's the one you use:
+
 ```bash
 beacon agent-guide --write
 ```
-
-This adds a short section to the project's `CLAUDE.md`, or `AGENTS.md` if that's the one you use. It tells the agent to get the port from Beacon rather than picking one, and to give you the `.test` URL instead of a `localhost` one.
 
 ## Sharing a project on a public URL
 

@@ -6,14 +6,17 @@ extension BeaconCLI {
     /// Emits the contract an coding agent should follow. The point of Beacon is
     /// that the agent asks for a port instead of inventing one, and then hands
     /// the human the domain instead of a localhost URL — so that instruction
-    /// needs to live in the project, not in someone's memory.
+    /// needs to live where the agent reads it, not in someone's memory.
     struct AgentGuide: ParsableCommand {
         static let configuration = CommandConfiguration(
             commandName: "agent-guide",
             abstract: "Print instructions to drop into CLAUDE.md or AGENTS.md.",
             discussion: """
             With --write, appends them to the agent instruction file in the \
-            current directory, creating it if needed.
+            current directory, creating it if needed. With --global, appends \
+            them to Claude Code's and Codex's user-wide files instead \
+            (~/.claude/CLAUDE.md and ~/.codex/AGENTS.md), so every project \
+            gets them.
             """
         )
 
@@ -23,111 +26,54 @@ extension BeaconCLI {
         @Flag(name: .long, help: "Write the guide to the file instead of printing it.")
         var write = false
 
+        @Flag(name: .long, help: "Write the guide for Claude Code and Codex, for every project.")
+        var global = false
+
+        func validate() throws {
+            if global && file != nil {
+                throw ValidationError("--global writes to each agent's own file; leave out --file.")
+            }
+        }
+
         func run() throws {
-            let text = guide()
+            let tld = (try? BeaconCLI.client.config())?.primaryTLD ?? "test"
+
+            if global {
+                try writeGlobal(tld: tld)
+                return
+            }
 
             guard write else {
-                print(text)
+                print(AgentInstructions.text(tld: tld))
                 return
             }
 
             let fm = FileManager.default
             let target = file ?? (fm.fileExists(atPath: "AGENTS.md") ? "AGENTS.md" : "CLAUDE.md")
-
-            var existing = (try? String(contentsOfFile: target, encoding: .utf8)) ?? ""
-            if existing.contains("<!-- beacon:start -->") {
+            switch try AgentInstructions.append(to: target, tld: tld) {
+            case .alreadyPresent:
                 print("\(target) already has Beacon's instructions. Nothing to do.")
-                return
+            case .added:
+                print("Added Beacon's instructions to \(Output.bold(target)).")
             }
-            if !existing.isEmpty && !existing.hasSuffix("\n") { existing += "\n" }
-            if !existing.isEmpty { existing += "\n" }
-
-            try (existing + text + "\n").write(toFile: target, atomically: true, encoding: .utf8)
-            print("Added Beacon's instructions to \(Output.bold(target)).")
         }
 
-        private func guide() -> String {
-            let example = (try? BeaconCLI.client.config())?.primaryTLD ?? "test"
-            return """
-            <!-- beacon:start -->
-            ## Local domain and port (Beacon)
-
-            This machine runs Beacon, which owns local domains and hands out reserved ports.
-            Never pick a port yourself and never hand the user a `localhost:NNNN` link.
-
-            **Before running the dev server**, ask Beacon for this project's port:
-
-            ```sh
-            beacon register --json
-            ```
-
-            Run it from the project root. It is idempotent — the same project always
-            gets the same port back — so it is safe in a setup script or on every run.
-            It prints, for example:
-
-            ```json
-            {
-              "name": "myproject",
-              "domain": "myproject.\(example)",
-              "port": 3246,
-              "url": "https://myproject.\(example)"
+        private func writeGlobal(tld: String) throws {
+            let agents = AgentInstructions.globalAgents().filter(\.isInstalled)
+            guard !agents.isEmpty else {
+                Output.fail("""
+                Neither Claude Code (~/.claude) nor Codex (~/.codex) is set up for this user. \
+                Run one of them once, or use --write in a project instead.
+                """)
             }
-            ```
-
-            Then:
-
-            1. Configure the dev server to listen on `port` (bind `127.0.0.1`).
-            2. Give the user **`url`** in every link, message and summary.
-               Not `http://localhost:3246`.
-            3. Use `url` for anything the app needs to know its own address:
-               `APP_URL`, `VITE_DEV_SERVER_URL`, OAuth callbacks, webhook targets.
-
-            If the project needs one particular port (a hard-coded OAuth callback,
-            say), ask for it with `beacon register --port 3000 --json`. If another
-            project already holds it, the command exits 1 and prints:
-
-            ```json
-            {
-              "ok": false,
-              "error": {
-                "code": "port_taken",
-                "message": "Port 3000 is already reserved for 'shop' (shop.\(example)). ...",
-                "owner": "shop",
-                "port": 3000,
-                "suggestedPort": 3001,
-                "hint": "beacon register myproject --port 3001 --json"
-              }
+            for agent in agents {
+                switch try AgentInstructions.append(to: agent.file, tld: tld) {
+                case .alreadyPresent:
+                    print("\(agent.name): \(agent.file) already has Beacon's instructions.")
+                case .added:
+                    print("\(agent.name): added Beacon's instructions to \(Output.bold(agent.file)).")
+                }
             }
-            ```
-
-            Run `hint`, or drop `--port` and let Beacon choose. Never take a port
-            from another project.
-
-            Useful one-liners:
-
-            ```sh
-            beacon port            # just the number, e.g. 3246
-            beacon url             # just the URL, e.g. https://myproject.\(example)
-            beacon list            # every project, and which are running
-            ```
-
-            To put the project on a public URL, only when the user asks for it:
-
-            ```sh
-            beacon share --json        # → "publicURL": "https://myproject-<label>.<relay domain>"
-            beacon share --password '…' --json
-            beacon unshare             # when they're done; sharing persists until then
-            ```
-
-            It needs a relay set up first (`beacon relay` shows it). If none is, ask
-            the user to run `beacon relay --url <domain> --token <token>` themselves,
-            and don't guess either value. The dev server must accept the relay's
-            domain as a Host (Vite: `server.allowedHosts`).
-
-            If `beacon` is not installed, say so and stop — do not fall back to a
-            random port.
-            <!-- beacon:end -->
-            """
         }
     }
 }
