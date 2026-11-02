@@ -1,0 +1,46 @@
+# beacon-relay behind an existing Traefik (v3).
+#
+# Never builds: the image is pulled from GHCR, built by
+# .github/workflows/relay-image.yml. On the server:
+#   docker compose pull && docker compose up -d
+#
+# Traefik terminates TLS for the apex and *.<apex> with one wildcard
+# certificate, which needs its Cloudflare DNS challenge; see README.md. The
+# relay itself only speaks plain HTTP on the Traefik network.
+name: beacon-relay
+
+services:
+  relay:
+    image: ghcr.io/globusgroup/beacon-relay:${IMAGE_TAG:?Set IMAGE_TAG in .env}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: "8080"
+      BEACON_PUBLIC_SCHEME: https
+      BEACON_PUBLIC_PORT: "443"
+      # Safe because the relay is only reachable through Traefik: no ports are
+      # published, so every X-Forwarded-For it sees was written by Traefik.
+      BEACON_TRUST_FORWARDED_FOR: "true"
+    networks:
+      - traefik
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=${TRAEFIK_NETWORK:?Set TRAEFIK_NETWORK in .env}
+      - traefik.http.routers.beacon-relay.rule=Host(`${BEACON_DOMAIN:?Set BEACON_DOMAIN in .env}`) || HostRegexp(`^[a-z0-9-]+\.${BEACON_DOMAIN}$`)
+      - traefik.http.routers.beacon-relay.entrypoints=${TRAEFIK_ENTRYPOINT:?Set TRAEFIK_ENTRYPOINT in .env}
+      - traefik.http.routers.beacon-relay.tls=true
+      - traefik.http.routers.beacon-relay.tls.certresolver=${TRAEFIK_CERTRESOLVER:?Set TRAEFIK_CERTRESOLVER in .env}
+      - traefik.http.routers.beacon-relay.tls.domains[0].main=${BEACON_DOMAIN}
+      - traefik.http.routers.beacon-relay.tls.domains[0].sans=*.${BEACON_DOMAIN}
+      - traefik.http.services.beacon-relay.loadbalancer.server.port=8080
+    healthcheck:
+      # The image has bash but no curl or wget.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /healthz HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && grep -q '\"ok\":true' <&3"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+networks:
+  traefik:
+    external: true
+    name: ${TRAEFIK_NETWORK:?Set TRAEFIK_NETWORK in .env}

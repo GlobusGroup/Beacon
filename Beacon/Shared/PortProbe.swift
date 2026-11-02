@@ -21,6 +21,8 @@ public enum PortProbe {
                 bind(fd, sa, socklen_t(MemoryLayout<sockaddr_in>.size))
             }
         }
-        return bound != 0
+        // Only "in use" means a listener. Ports below 1024 refuse an
+        // unprivileged bind with EACCES whether or not anything is there.
+        return bound != 0 && errno == EADDRINUSE
     }
 }

@@ -27,7 +27,15 @@ public enum BeaconPaths {
 
     public static var sitesFile: String { supportDir + "/sites.json" }
     public static var configFile: String { supportDir + "/config.json" }
+    /// Relay address, token and shared projects. Readable by root only: it holds the token.
+    public static var relayFile: String { supportDir + "/relay.json" }
     public static var certsDir: String { supportDir + "/certs" }
+    /// Output of the projects Beacon starts, one file per project.
+    public static var projectLogsDir: String { supportDir + "/logs" }
+    /// How long each project took to come up last time, for the progress bar.
+    public static var startTimesFile: String { supportDir + "/start-times.json" }
+
+    public static func projectLog(for name: String) -> String { projectLogsDir + "/" + name + ".log" }
 
     public static var caCertFile: String { certsDir + "/beacon-ca.pem" }
     public static var caKeyFile: String { certsDir + "/beacon-ca.key" }

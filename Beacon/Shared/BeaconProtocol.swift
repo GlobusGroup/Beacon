@@ -14,18 +14,36 @@ public struct BeaconRequest: Codable, Sendable {
         case getConfig
         case setConfig
         case restart
+        /// Bring a project up with its run command.
+        case start
+        /// Stop a project Beacon started.
+        case stop
+        case runStatus
+        /// Make a project reachable through the relay.
+        case share
+        case unshare
+        case relayStatus
+        /// Point Beacon at a relay, or turn sharing off.
+        case setRelay
     }
 
     public var op: Op
     public var name: String?
     public var register: RegisterSpec?
     public var config: BeaconConfig?
+    public var share: ShareSpec?
+    public var relay: RelaySpec?
 
-    public init(op: Op, name: String? = nil, register: RegisterSpec? = nil, config: BeaconConfig? = nil) {
+    public init(
+        op: Op, name: String? = nil, register: RegisterSpec? = nil, config: BeaconConfig? = nil,
+        share: ShareSpec? = nil, relay: RelaySpec? = nil
+    ) {
         self.op = op
         self.name = name
         self.register = register
         self.config = config
+        self.share = share
+        self.relay = relay
     }
 }
 
@@ -41,6 +59,9 @@ public struct RegisterSpec: Codable, Sendable {
     public var secure: Bool?
     /// Allocate a fresh port even if this name already holds one.
     public var reassign: Bool?
+    /// Shell command that starts the project. An empty string, or `auto`,
+    /// goes back to detecting it from the project directory.
+    public var run: String?
 
     public init(
         name: String,
@@ -49,7 +70,8 @@ public struct RegisterSpec: Codable, Sendable {
         path: String? = nil,
         aliases: [String]? = nil,
         secure: Bool? = nil,
-        reassign: Bool? = nil
+        reassign: Bool? = nil,
+        run: String? = nil
     ) {
         self.name = name
         self.domain = domain
@@ -58,6 +80,7 @@ public struct RegisterSpec: Codable, Sendable {
         self.aliases = aliases
         self.secure = secure
         self.reassign = reassign
+        self.run = run
     }
 }
 
@@ -93,36 +116,50 @@ public struct BeaconResponse: Codable, Sendable {
     public var ok: Bool
     public var errorCode: String?
     public var error: String?
+    /// Machine-readable context for a failure, e.g. who owns a contested port
+    /// and which port to try instead. Keys are stable; values are strings.
+    public var errorDetails: [String: String]?
     public var site: Site?
     public var sites: [Site]?
     public var status: DaemonStatus?
     public var config: BeaconConfig?
+    public var run: RunStatus?
+    public var relay: RelayStatus?
 
     public init(
         ok: Bool = true, errorCode: String? = nil, error: String? = nil,
+        errorDetails: [String: String]? = nil,
         site: Site? = nil, sites: [Site]? = nil,
-        status: DaemonStatus? = nil, config: BeaconConfig? = nil
+        status: DaemonStatus? = nil, config: BeaconConfig? = nil,
+        run: RunStatus? = nil, relay: RelayStatus? = nil
     ) {
         self.ok = ok
         self.errorCode = errorCode
         self.error = error
+        self.errorDetails = errorDetails
         self.site = site
         self.sites = sites
         self.status = status
         self.config = config
+        self.run = run
+        self.relay = relay
     }
 
-    public static func failure(_ code: String, _ message: String) -> BeaconResponse {
-        BeaconResponse(ok: false, errorCode: code, error: message)
+    public static func failure(
+        _ code: String, _ message: String, details: [String: String]? = nil
+    ) -> BeaconResponse {
+        BeaconResponse(ok: false, errorCode: code, error: message, errorDetails: details)
     }
 }
 
 public struct BeaconClientError: LocalizedError, Sendable {
     public let code: String
     public let message: String
-    public init(code: String, message: String) {
+    public let details: [String: String]?
+    public init(code: String, message: String, details: [String: String]? = nil) {
         self.code = code
         self.message = message
+        self.details = details
     }
     public var errorDescription: String? { message }
 }

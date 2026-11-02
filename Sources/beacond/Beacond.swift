@@ -40,13 +40,16 @@ extension Beacond {
             }
 
             let registry = Registry()
+            registry.daemonPorts = [httpPort, httpsPort, dnsPort]
             let routes = RouteTable()
             let tls = TLSContextBox()
+            let runner = ProjectRunner()
 
             try prepare(registry: registry, routes: routes, tls: tls)
 
             let group = MultiThreadedEventLoopGroup(numberOfThreads: System.coreCount)
             defer { try? group.syncShutdownGracefully() }
+            let tunnel = TunnelClient(group: group, registry: registry)
 
             // Reissue certificates and refresh routing whenever a project is
             // added, removed or moved to a different domain.
@@ -61,13 +64,15 @@ extension Beacond {
             var channels: [Channel] = []
             channels += try DNSServer(group: group, port: dnsPort).start()
             channels += try ProxyServer(
-                group: group, routes: routes, tls: tls,
+                group: group, routes: routes, tls: tls, runner: runner,
                 httpPort: httpPort, httpsPort: httpsPort
             ).start()
             channels.append(try ControlServer(
                 group: group,
                 service: ControlService(
                     registry: registry,
+                    runner: runner,
+                    tunnel: tunnel,
                     httpPort: httpPort,
                     httpsPort: httpsPort,
                     dnsPort: dnsPort
@@ -75,6 +80,7 @@ extension Beacond {
                 path: BeaconPaths.socketPath
             ).start())
 
+            tunnel.start()
             Log.info("Ready. \(registry.allSites.count) project(s) routed.")
 
             // launchd sends SIGTERM; tidy the socket so the next start is clean.

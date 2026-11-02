@@ -34,7 +34,57 @@ enum SnapshotRenderer {
             notice: "Couldn't remove shop.test: the service didn't answer. Restart it from Settings."
         )
 
+        let running = BeaconModel(
+            previewRunning: true, trusted: true, sites: projects, onlinePorts: [3101],
+            runs: [
+                "studio": RunStatus(name: "studio", state: .running, command: "npm run dev"),
+                "api": RunStatus(
+                    name: "api", state: .starting, command: "docker compose up -d",
+                    startedAt: Date().addingTimeInterval(-12), expectedSeconds: 30,
+                    log: ["Container api-db-1  Started"]
+                ),
+            ],
+            runnable: ["studio", "api", "shop"]
+        )
+        let failed = BeaconModel(
+            previewRunning: true, trusted: true, sites: projects, onlinePorts: [],
+            runs: ["shop": RunStatus(
+                name: "shop", state: .failed, command: "npm run dev",
+                message: "`npm run dev` exited with status 1 before anything listened on port 3103."
+            )],
+            runnable: ["studio", "shop"]
+        )
+
+        let sharing = BeaconModel(
+            previewRunning: true, trusted: true, sites: projects, onlinePorts: [3101, 3102],
+            relay: RelayStatus(
+                url: "beacon.cab", hasToken: true, state: .connected, label: "dean",
+                shares: [
+                    SharedProject(name: "studio", publicURL: "https://studio-dean.beacon.cab", passwordProtected: false),
+                    SharedProject(name: "shop", passwordProtected: true),
+                ]
+            )
+        )
+        let relayFailed = BeaconModel(
+            previewRunning: true, trusted: true, sites: projects,
+            relay: RelayStatus(
+                url: "beacon.cab", hasToken: true, state: .failed,
+                error: "The relay rejected the token.", shares: [SharedProject(name: "studio", passwordProtected: false)]
+            )
+        )
+
         var shots: [(String, AnyView, BeaconModel)] = [
+            ("menu-9-sharing", AnyView(MenuPanel()), sharing),
+            ("menu-10-share-form", AnyView(
+                ProjectRow(site: projects[1], askingToShare: true).frame(width: 380).padding(.vertical, 6)
+            ), sharing),
+            ("settings-sharing", AnyView(SettingsPanel()), sharing),
+            ("settings-relay-failed", AnyView(SettingsPanel()), relayFailed),
+            ("menu-6-starting", AnyView(MenuPanel()), running),
+            ("menu-7-failed", AnyView(MenuPanel()), failed),
+            ("menu-8-confirm-remove", AnyView(
+                ProjectRow(site: projects[2], confirmingRemoval: true).frame(width: 380).padding(.vertical, 6)
+            ), ready),
             ("menu-1-not-installed", AnyView(MenuPanel()), fresh),
             ("menu-2-certificate-pending", AnyView(MenuPanel()), installed),
             ("menu-3-ready", AnyView(MenuPanel()), ready),

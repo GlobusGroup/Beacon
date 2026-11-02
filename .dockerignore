@@ -1,0 +1,12 @@
+# Only the package sources go into the relay image build.
+.build
+.xcode
+.swiftpm
+DerivedData
+Brand
+Beacon.xcodeproj
+Scripts
+*.xcuserdatad
+.DS_Store
+.git
+Relay/.env

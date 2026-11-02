@@ -19,7 +19,47 @@ enum Output {
         print(String(decoding: data, as: UTF8.self))
     }
 
+    /// Encodes `value` and merges `extra` keys into the top-level object, so
+    /// added context never changes the shape callers already parse.
+    static func json<T: Encodable>(_ value: T, adding extra: [String: Any]) {
+        guard !extra.isEmpty,
+              let data = try? BeaconJSON.encoder.encode(value),
+              var object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        else { return json(value) }
+        object.merge(extra) { _, new in new }
+        guard let merged = try? JSONSerialization.data(
+            withJSONObject: object,
+            options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        ) else { return json(value) }
+        print(String(decoding: merged, as: UTF8.self))
+    }
+
+    /// The failure shape for `--json` callers: on stdout, so a caller piping
+    /// stdout into a parser gets an answer instead of empty input.
+    static func failJSON(_ error: BeaconClientError, hint: String? = nil) -> Never {
+        var body: [String: Any] = ["code": error.code, "message": error.message]
+        for (key, value) in error.details ?? [:] {
+            body[key] = Int(value).map { $0 as Any } ?? value
+        }
+        if let hint { body["hint"] = hint }
+        let object: [String: Any] = ["ok": false, "error": body]
+        if let data = try? JSONSerialization.data(
+            withJSONObject: object,
+            options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        ) {
+            print(String(decoding: data, as: UTF8.self))
+        }
+        fflush(stdout)
+        exit(1)
+    }
+
+    static func warn(_ message: String) {
+        fflush(stdout)
+        FileHandle.standardError.write(Data((yellow("warning: ") + message + "\n").utf8))
+    }
+
     static func fail(_ message: String) -> Never {
+        fflush(stdout)
         FileHandle.standardError.write(Data((red("error: ") + message + "\n").utf8))
         exit(1)
     }
@@ -41,6 +81,10 @@ enum Output {
         }
         if let path = site.path {
             print("  \(dim("Path"))      \(path)")
+        }
+        if let run = site.runSpec {
+            let source = site.run == nil ? dim("  (detected — \(run.label))") : ""
+            print("  \(dim("Run"))       \(run.command)\(source)")
         }
         print("")
     }

@@ -92,11 +92,56 @@ beacon config --add-tld dev     # own another TLD
 beacon config --port-range 4000-4999
 ```
 
+`--port` (and the Port field in the app's Add project window) asks for a
+specific port. Beacon accepts it unless another project already holds it
+(`port_taken`) or Beacon listens on it itself (`port_reserved_by_beacon`). The
+refusal names the owner and a free port to use instead. With `--json`, errors go
+to stdout as `{"ok": false, "error": {"code", "message", "suggestedPort", "hint", …}}`,
+where `hint` is a command that will succeed, and the exit status is 1.
+
 In a script:
 
 ```bash
 PORT=$(beacon port) npm run dev
 ```
+
+### Starting projects from the browser
+
+Open a project's domain while its dev server is down and Beacon's "isn't
+running" page offers to start it. Click **Start**, and the page shows a
+spinner, a progress bar and the command's output, then reloads into the app
+once something answers on the port.
+
+Beacon works out the command from the project directory:
+
+| Found | Runs |
+| --- | --- |
+| `compose.yaml` / `docker-compose.yml` that publishes the port | `docker compose up -d` |
+| a compose file and a `package.json` | `docker compose up -d && npm run dev` |
+| `package.json` with `dev`, `start` or `serve` | `npm run dev` (or `pnpm`/`yarn`/`bun` by lockfile), with `--port $PORT` for Vite, Astro and Nuxt |
+| `artisan` | `php artisan serve --port=$PORT` |
+| `bin/dev` or `bin/rails` | `bin/dev`, or `bin/rails server -p $PORT` |
+| `manage.py` | `python manage.py runserver 127.0.0.1:$PORT` |
+
+Anything else, or to override the guess:
+
+```bash
+beacon register shop --run "make serve"   # 'auto' goes back to detecting
+```
+
+The command runs as the owner of the project directory, in a login shell
+(so `nvm`, `asdf` and Docker are on the `PATH` as in a terminal), with
+`PORT`, `BEACON_PORT` and `BEACON_URL` set. The same thing from a terminal:
+
+```bash
+beacon start shop      # waits until it's up, printing its output
+beacon logs shop       # follow the output afterwards
+beacon stop shop       # also runs `docker compose stop` for compose projects
+```
+
+The start endpoint only accepts requests from Beacon's own page: it needs a
+custom header, which another site can't send without a CORS preflight
+Beacon never approves.
 
 ### Subdomains come free
 
@@ -104,6 +149,30 @@ PORT=$(beacon port) npm run dev
 DNS answers for the whole subtree and the TLS certificate carries a wildcard.
 Use `--alias` only when you want a genuinely different name to reach the same
 project.
+
+## Sharing on a public URL
+
+With a [Beacon relay](Relay/README.md) running on a server you control, any
+registered project can be put on the internet:
+
+```bash
+beacon relay --url beacon.cab --token <token>   # once
+beacon share shop                               # → https://shop-dean.beacon.cab
+beacon share shop --password hunter2            # basic auth, any username
+beacon unshare shop
+beacon relay                                    # tunnel state and what's shared
+```
+
+In the menu bar app, set the relay and token under **Settings → Sharing**,
+then right-click a project and choose **Share on the internet…**. Shared
+projects show a globe; the context menu copies or opens the public URL.
+
+The daemon keeps one outbound WebSocket open to the relay while anything is
+shared, and relays each visitor to the project's port, so nothing on the Mac
+listens on the internet. The URL is `<project>-<label>.<domain>`, where the
+label belongs to your token, so it's the same every time. Shares persist across
+restarts until unshared. Dev servers that check `Host` need to allow the
+relay's domain (Vite: `server.allowedHosts: ['.beacon.cab']`).
 
 ## Telling a coding agent about it
 
@@ -125,6 +194,7 @@ than a `localhost` URL.
 | Certificate authority | A local root trusted in your login keychain, plus one leaf certificate covering every registered domain, reissued when the list changes. |
 | Registry | `/Library/Application Support/Beacon/sites.json`. Written on every change. |
 | Control socket | `/var/run/beacon.sock`, group `staff`, so the CLI and the app work without `sudo`. |
+| Tunnel client | While anything is shared, one WebSocket to the relay. Settings and token in `relay.json`, root-only. |
 
 The proxy rewrites `X-Forwarded-Proto`, `-Host`, `-Port` and `-For` on **every**
 request, not just the first on a connection — frameworks that generate absolute
@@ -188,6 +258,9 @@ Brand/                   brand kit v1.0: guide, logos, palette, concept board
 Scripts/                 asset generator and the app's embed build phase
 Sources/beacond/         DNS, proxy, certificates, registry, control socket
 Sources/beacon/          the CLI
+Sources/BeaconTunnel/    tunnel wire format and HTTP head handling, shared with the relay
+Sources/beacon-relay/    the public relay server (Linux)
+Relay/                   Dockerfile, compose file and setup guide for the relay
 Beacon/                  the menu bar app (Xcode target)
 Beacon/Shared/           models and IPC, compiled into both the app and the package
 Beacon.xcodeproj         the app

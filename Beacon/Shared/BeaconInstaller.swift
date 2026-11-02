@@ -81,9 +81,15 @@ public enum BeaconInstaller {
     /// first one makes `https://myproject.test` work.
     public static func isCATrusted() -> Bool {
         guard FileManager.default.fileExists(atPath: BeaconPaths.caCertFile) else { return false }
-        let result = Shell.run("/usr/bin/security", [
-            "verify-cert", "-c", BeaconPaths.caCertFile, "-p", "ssl",
-        ])
+        let verify = ["/usr/bin/security", "verify-cert", "-c", BeaconPaths.caCertFile, "-p", "ssl"]
+        // Trust is per-user. Under `sudo beacon install`, asking as root would
+        // always say no, so ask as the person who ran sudo.
+        let result: ShellResult
+        if isRoot, let user = ProcessInfo.processInfo.environment["SUDO_USER"], user != "root" {
+            result = Shell.run("/usr/bin/sudo", ["-u", user, "-H"] + verify)
+        } else {
+            result = Shell.run(verify[0], Array(verify.dropFirst()))
+        }
         // verify-cert exits 0 either way, so the verdict has to be read.
         return !(result.stdout + result.stderr).contains("CSSMERR")
     }

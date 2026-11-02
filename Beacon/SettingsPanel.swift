@@ -11,12 +11,18 @@ struct SettingsPanel: View {
     @State private var loaded = false
     @State private var saveError: String?
 
+    @State private var relayURL = ""
+    @State private var relayToken = ""
+    @State private var relayLoaded = false
+    @State private var relayError: String?
+
     @State private var explaining: PrivilegedAction?
     @State private var outcome: (action: PrivilegedAction, result: ActionOutcome)?
 
     var body: some View {
         Form {
             routingSection
+            sharingSection
             serviceSection
             uninstallSection
         }
@@ -28,6 +34,7 @@ struct SettingsPanel: View {
             AppWindows.becomeRegularApp()
         }
         .onChange(of: model.config) { _, _ in if !isDirty { load(force: true) } }
+        .onChange(of: model.relay?.url) { _, _ in if !relayDirty { loadRelay(force: true) } }
         .sheet(item: $explaining) { action in
             PermissionExplainer(action: action) { purge in run(action, purge: purge) }
         }
@@ -78,6 +85,102 @@ struct SettingsPanel: View {
             }
         } header: {
             Text("Routing")
+        }
+    }
+
+    // MARK: - Sharing
+
+    private var sharingSection: some View {
+        Section {
+            if model.isRunning && !model.daemonSupportsSharing {
+                Text("The background service is older than this app and can't share projects. Reinstall it with `make reinstall`, or uninstall and set Beacon up again.")
+                    .font(.beaconLabel)
+                    .foregroundStyle(Color.beaconSecondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                LabeledContent("Relay") {
+                    TextField("", text: $relayURL, prompt: Text("beacon.cab"))
+                        .font(.beaconMono)
+                        .multilineTextAlignment(.trailing)
+                }
+                LabeledContent("Token") {
+                    SecureField("", text: $relayToken, prompt: Text(model.relay?.hasToken == true ? "Saved · paste to replace" : "Paste your token"))
+                        .font(.beaconMono)
+                        .multilineTextAlignment(.trailing)
+                }
+                LabeledContent("Tunnel") { tunnelStatus }
+
+                HStack {
+                    if let relayError {
+                        Label(relayError, systemImage: "exclamationmark.triangle.fill")
+                            .font(.beaconLabel)
+                            .foregroundStyle(.red)
+                    } else {
+                        Text("Share a project from its menu to give it a public URL.")
+                            .font(.beaconLabel)
+                            .foregroundStyle(Color.beaconSecondaryText)
+                    }
+                    Spacer()
+                    if model.relayConfigured {
+                        Button("Turn off") { applyRelay(url: "", token: "") }
+                            .disabled(model.activity == .saving)
+                            .help("Forgets the relay and token, and stops sharing every project.")
+                    }
+                    Button("Apply") { applyRelay(url: relayURL.trimmingCharacters(in: .whitespaces), token: relayToken.isEmpty ? nil : relayToken) }
+                        .buttonStyle(.signalCompact)
+                        .disabled(!relayDirty || !model.isRunning || model.activity == .saving)
+                }
+            }
+        } header: {
+            Text("Sharing")
+        }
+        .onAppear { loadRelay() }
+    }
+
+    @ViewBuilder
+    private var tunnelStatus: some View {
+        if let relay = model.relay {
+            switch relay.state {
+            case .off:
+                StatusLabel(text: "Off", tone: .idle)
+            case .idle:
+                StatusLabel(text: "Ready · nothing shared", tone: .idle)
+            case .connecting:
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.mini)
+                    Text("Connecting…").font(.beaconLabel)
+                }
+            case .connected:
+                let shared = relay.shares.count
+                StatusLabel(
+                    text: "Connected\(relay.label.map { " as \($0)" } ?? "") · \(shared) shared",
+                    tone: .online
+                )
+            case .failed:
+                StatusLabel(text: relay.error ?? "Can't reach the relay", tone: .attention)
+                    .help(relay.error ?? "")
+            }
+        } else {
+            StatusLabel(text: "Off", tone: .idle)
+        }
+    }
+
+    private var relayDirty: Bool {
+        relayLoaded && (relayURL.trimmingCharacters(in: .whitespaces) != (model.relay?.url ?? "") || !relayToken.isEmpty)
+    }
+
+    private func loadRelay(force: Bool = false) {
+        guard !relayLoaded || force else { return }
+        relayURL = model.relay?.url ?? ""
+        relayLoaded = true
+    }
+
+    private func applyRelay(url: String, token: String?) {
+        relayError = nil
+        Task {
+            relayError = await model.setRelay(url: url, token: token)
+            if relayError == nil { relayToken = "" }
+            loadRelay(force: true)
         }
     }
 

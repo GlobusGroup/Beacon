@@ -132,34 +132,68 @@ struct MenuPanel: View {
     }
 }
 
-/// One project. Click to open it; the context menu has the rest.
+/// One project. Click to open it; the context menu has the rest. When it's
+/// down and Beacon knows how to start it, a play button brings it up.
 struct ProjectRow: View {
     @EnvironmentObject private var model: BeaconModel
+    @Environment(\.openSettings) private var openSettings
     @State private var isHovering = false
-    @State private var confirmingRemoval = false
+    @State private var confirmingRemoval: Bool
+    @State private var askingToShare: Bool
+    @State private var password = ""
     let site: Site
 
+    init(site: Site, confirmingRemoval: Bool = false, askingToShare: Bool = false) {
+        self.site = site
+        _confirmingRemoval = State(initialValue: confirmingRemoval)
+        _askingToShare = State(initialValue: askingToShare)
+    }
+
+    private var shared: SharedProject? { model.shared(site) }
+
+    private var run: RunStatus? { model.run(for: site) }
+    private var isUp: Bool { model.isUp(site) }
+    private var isStarting: Bool { run?.state == .starting }
+    /// Started from the menu and still up, so it's ours to stop.
+    private var isStoppable: Bool { isUp && run?.state == .running }
+
     var body: some View {
+        if confirmingRemoval {
+            removalConfirmation
+        } else if askingToShare {
+            shareForm
+        } else {
+            row
+        }
+    }
+
+    private var row: some View {
         HStack(spacing: 12) {
-            Text(site.domain)
-                .font(.beaconBodyEmphasis)
-                .foregroundStyle(Color.beaconText)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 6) {
+                Text(site.domain)
+                    .font(.beaconBodyEmphasis)
+                    .foregroundStyle(Color.beaconText)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if shared != nil { shareBadge }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             Text(verbatim: "localhost:\(site.port)")
                 .font(.beaconMono)
                 .foregroundStyle(Color.beaconSecondaryText)
 
-            StatusLabel(
-                text: model.isUp(site) ? "Online" : "Offline",
-                tone: model.isUp(site) ? .online : .idle
-            )
-            .frame(width: 64, alignment: .leading)
+            status
+                .frame(width: 72, alignment: .leading)
+
+            action
+                .frame(width: 20)
         }
         .padding(.horizontal, 12)
         .frame(height: 44)
+        .overlay(alignment: .bottom) {
+            if isStarting, let run { StartProgress(run: run).padding(.horizontal, 12) }
+        }
         .background(
             RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .fill(isHovering ? Color.beaconSelection : .clear)
@@ -168,29 +202,234 @@ struct ProjectRow: View {
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
         .onTapGesture { model.open(site) }
-        .help(model.isUp(site)
-              ? "Open \(site.url)"
-              : "Nothing is listening on port \(site.port). Start the project's dev server on that port.")
+        .help(helpText)
         .contextMenu {
             Button("Open in browser") { model.open(site) }
+            if model.canStart(site) && !isUp && !isStarting {
+                Button("Start project") { Task { await model.start(site) } }
+            }
+            if isUp {
+                Button("Stop project") { Task { await model.stop(site) } }
+            }
+            if run != nil {
+                Button("Show output") { model.showOutput(site) }
+            }
+            Divider()
             Button("Copy URL") { model.copy(site.url) }
             Button("Copy port") { model.copy(String(site.port)) }
             if site.path != nil {
                 Button("Show in Finder") { model.revealInFinder(site) }
             }
             Divider()
+            shareMenuItems
+            Divider()
             Button("Remove project…", role: .destructive) { confirmingRemoval = true }
         }
-        .confirmationDialog(
-            "Remove \(site.domain)?",
-            isPresented: $confirmingRemoval
-        ) {
-            Button("Remove project", role: .destructive) {
-                Task { await model.remove(site) }
+    }
+
+    // MARK: - Sharing
+
+    @ViewBuilder
+    private var shareMenuItems: some View {
+        if let shared {
+            if let url = shared.publicURL {
+                Button("Open public URL") { model.openPublic(site) }
+                Button("Copy public URL") { model.copy(url) }
             }
-        } message: {
-            Text("Beacon stops routing \(site.domain) and releases port \(String(site.port)), which may be given to another project.")
+            Button("Stop sharing") { Task { await model.unshare(site) } }
+        } else if model.relayConfigured {
+            Button("Share on the internet…") { askingToShare = true }
+        } else if model.daemonSupportsSharing {
+            Button("Set up sharing…") { AppWindows.openSettings(with: openSettings) }
         }
+    }
+
+    /// Green once the relay has the URL live, amber while it hasn't.
+    private var shareBadge: some View {
+        let live = shared?.publicURL != nil && model.relay?.state == .connected
+        return Image(systemName: "globe")
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(live ? Color.beaconOnline : Color.beaconSignal)
+    }
+
+    /// The address the relay will give this project, when it can be known in
+    /// advance: the label only arrives once the tunnel has connected.
+    private var expectedAddress: String? {
+        guard let relay = model.relay, let label = relay.label, let url = relay.url else { return nil }
+        var host = url
+        if let schemeEnd = host.range(of: "://") { host = String(host[schemeEnd.upperBound...]) }
+        host = String(host.prefix { $0 != "/" && $0 != ":" })
+        return "\(site.name)-\(label).\(host)"
+    }
+
+    /// Asked in the row, for the same reason as removal.
+    private var shareForm: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Share \(site.domain) on the internet?")
+                .font(.beaconBodyEmphasis)
+                .foregroundStyle(Color.beaconText)
+            Text("Anyone with the link reaches port \(String(site.port)) until you stop sharing it.")
+                .font(.beaconLabel)
+                .foregroundStyle(Color.beaconSecondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+            if let expectedAddress {
+                Text(verbatim: "https://\(expectedAddress)")
+                    .font(.beaconMono)
+                    .foregroundStyle(Color.beaconText)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            SecureField("Password (optional)", text: $password)
+                .textFieldStyle(.roundedBorder)
+                .font(.beaconLabel)
+            HStack(spacing: 8) {
+                Spacer()
+                Button("Cancel") {
+                    askingToShare = false
+                    password = ""
+                }
+                .buttonStyle(.quiet)
+                .keyboardShortcut(.cancelAction)
+                Button("Share") {
+                    let chosen = password.isEmpty ? nil : password
+                    askingToShare = false
+                    password = ""
+                    Task { await model.share(site, password: chosen) }
+                }
+                .buttonStyle(.signalCompact)
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(Color.beaconSelection.opacity(0.6))
+        )
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+    }
+
+    /// Asked inside the row rather than in a dialog. A dialog opens as its
+    /// own window, and clicking it closes the menu bar panel underneath,
+    /// leaving the dialog stranded on screen.
+    private var removalConfirmation: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Remove \(site.domain)?")
+                .font(.beaconBodyEmphasis)
+                .foregroundStyle(Color.beaconText)
+            Text("Beacon stops routing it and releases port \(String(site.port)), which may be given to another project.")
+                .font(.beaconLabel)
+                .foregroundStyle(Color.beaconSecondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                Spacer()
+                Button("Cancel") { confirmingRemoval = false }
+                    .buttonStyle(.quiet)
+                    .keyboardShortcut(.cancelAction)
+                Button("Remove project") {
+                    confirmingRemoval = false
+                    Task { await model.remove(site) }
+                }
+                .buttonStyle(.destructiveCompact)
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(Color.beaconSelection.opacity(0.6))
+        )
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private var status: some View {
+        if isStarting {
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.mini)
+                Text("Starting")
+                    .font(.beaconLabel)
+                    .foregroundStyle(Color.beaconSecondaryText)
+            }
+        } else if isUp {
+            StatusLabel(text: "Online", tone: .online)
+        } else if run?.state == .failed {
+            StatusLabel(text: "Failed", tone: .attention)
+        } else {
+            StatusLabel(text: "Offline", tone: .idle)
+        }
+    }
+
+    /// Start when down, stop when the menu started it; nothing otherwise, so
+    /// Beacon never offers to stop a dev server someone ran by hand.
+    @ViewBuilder
+    private var action: some View {
+        if !isUp && !isStarting && model.canStart(site) {
+            iconButton(run?.state == .failed ? "arrow.clockwise" : "play.fill") {
+                Task { await model.start(site) }
+            }
+        } else if isStoppable && isHovering {
+            iconButton("stop.fill") { Task { await model.stop(site) } }
+        } else {
+            // Holds the column, so every row's status lines up.
+            Color.clear
+        }
+    }
+
+    private func iconButton(_ symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 10, weight: .semibold))
+                .frame(width: 20, height: 20)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.quiet)
+    }
+
+    private var helpText: String {
+        if let shared {
+            if let url = shared.publicURL { return "\(baseHelpText)\nShared at \(url)" }
+            if let error = shared.error { return "\(baseHelpText)\nNot shared: \(error)" }
+            return "\(baseHelpText)\nWaiting for the relay to share it."
+        }
+        return baseHelpText
+    }
+
+    private var baseHelpText: String {
+        if isStarting { return run?.log.last ?? "Starting \(site.name)…" }
+        if run?.state == .failed { return run?.message ?? "\(site.name) didn't start." }
+        if isUp { return "Open \(site.url)" }
+        if model.canStart(site) {
+            let command = site.runSpec?.command ?? "its run command"
+            return "Nothing is listening on port \(site.port). Press ▶ to start it with `\(command)`."
+        }
+        return "Nothing is listening on port \(site.port). Start the project's dev server on that port."
+    }
+}
+
+/// A hairline under a starting row that eases towards the expected start
+/// time, the same curve as the browser page uses.
+private struct StartProgress: View {
+    let run: RunStatus
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.2)) { context in
+            let started = run.startedAt ?? context.date
+            let seconds = max(0, context.date.timeIntervalSince(started))
+            let expected = max(run.expectedSeconds ?? 10, 1)
+            let fraction = 0.95 * (1 - exp(-1.6 * seconds / expected))
+
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.beaconHairline)
+                    Capsule().fill(Color.beaconSignal)
+                        .frame(width: proxy.size.width * fraction)
+                        .animation(.linear(duration: 0.2), value: fraction)
+                }
+            }
+            .frame(height: 2)
+        }
+        .padding(.bottom, 4)
     }
 }
 

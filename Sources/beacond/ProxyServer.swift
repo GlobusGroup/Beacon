@@ -1,4 +1,5 @@
 import BeaconKit
+import BeaconTunnel
 import Foundation
 import NIOCore
 import NIOPosix
@@ -49,6 +50,7 @@ final class ProxyFrontendHandler: ChannelInboundHandler {
     }
 
     private let routes: RouteTable
+    private let runner: ProjectRunner
     private let scheme: String
     private let listenPort: Int
 
@@ -57,8 +59,9 @@ final class ProxyFrontendHandler: ChannelInboundHandler {
     /// Rewritten bytes produced before the upstream connection was ready.
     private var queued: ByteBuffer?
 
-    init(routes: RouteTable, scheme: String, listenPort: Int) {
+    init(routes: RouteTable, runner: ProjectRunner, scheme: String, listenPort: Int) {
         self.routes = routes
+        self.runner = runner
         self.scheme = scheme
         self.listenPort = listenPort
     }
@@ -116,6 +119,12 @@ final class ProxyFrontendHandler: ChannelInboundHandler {
                 )
                 return
             }
+            if let head = rewriter.firstHead, head.target.hasPrefix(BeaconEndpoint.prefix) {
+                state = .closed
+                queued = nil
+                BeaconEndpoint.handle(head, site: site, runner: runner, on: context.channel)
+                return
+            }
             openUpstream(channel: context.channel, site: site)
         }
     }
@@ -155,7 +164,7 @@ final class ProxyFrontendHandler: ChannelInboundHandler {
         state = .connecting
 
         ClientBootstrap(group: channel.eventLoop)
-            .channelOption(ChannelOptions.socketOption(.tcp_nodelay), value: 1)
+            .channelOption(ChannelOptions.tcpOption(.tcp_nodelay), value: 1)
             .channelInitializer { upstream in
                 upstream.pipeline.addHandler(ProxyBackendHandler(frontend: channel))
             }
@@ -171,7 +180,9 @@ final class ProxyFrontendHandler: ChannelInboundHandler {
                 case .failure:
                     state = .closed
                     queued = nil
-                    ProxyResponder.sendUpstreamDown(on: channel, site: site)
+                    ProxyResponder.sendUpstreamDown(
+                        on: channel, site: site, run: runner.status(for: site)
+                    )
                 }
             }
     }
@@ -214,6 +225,7 @@ struct ProxyServer {
     let group: EventLoopGroup
     let routes: RouteTable
     let tls: TLSContextBox
+    let runner: ProjectRunner
     let httpPort: Int
     let httpsPort: Int
 
@@ -221,10 +233,10 @@ struct ProxyServer {
         let plain = try ServerBootstrap(group: group)
             .serverChannelOption(ChannelOptions.backlog, value: 256)
             .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
-            .childChannelOption(ChannelOptions.socketOption(.tcp_nodelay), value: 1)
+            .childChannelOption(ChannelOptions.tcpOption(.tcp_nodelay), value: 1)
             .childChannelInitializer { channel in
                 channel.pipeline.addHandler(
-                    ProxyFrontendHandler(routes: routes, scheme: "http", listenPort: httpPort)
+                    ProxyFrontendHandler(routes: routes, runner: runner, scheme: "http", listenPort: httpPort)
                 )
             }
             .bind(host: "0.0.0.0", port: httpPort)
@@ -234,7 +246,7 @@ struct ProxyServer {
         let secure = try ServerBootstrap(group: group)
             .serverChannelOption(ChannelOptions.backlog, value: 256)
             .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
-            .childChannelOption(ChannelOptions.socketOption(.tcp_nodelay), value: 1)
+            .childChannelOption(ChannelOptions.tcpOption(.tcp_nodelay), value: 1)
             .childChannelInitializer { channel in
                 guard let context = tls.current else {
                     return channel.close()
@@ -242,7 +254,7 @@ struct ProxyServer {
                 do {
                     try channel.pipeline.syncOperations.addHandler(NIOSSLServerHandler(context: context))
                     try channel.pipeline.syncOperations.addHandler(
-                        ProxyFrontendHandler(routes: routes, scheme: "https", listenPort: httpsPort)
+                        ProxyFrontendHandler(routes: routes, runner: runner, scheme: "https", listenPort: httpsPort)
                     )
                     return channel.eventLoop.makeSucceededVoidFuture()
                 } catch {

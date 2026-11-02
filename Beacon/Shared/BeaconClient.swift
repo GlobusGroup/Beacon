@@ -83,7 +83,8 @@ public struct BeaconClient: Sendable {
         guard response.ok else {
             throw BeaconClientError(
                 code: response.errorCode ?? "error",
-                message: response.error ?? "Beacon refused the request."
+                message: response.error ?? "Beacon refused the request.",
+                details: response.errorDetails
             )
         }
         return response
@@ -123,6 +124,42 @@ public struct BeaconClient: Sendable {
 
     public func setConfig(_ config: BeaconConfig) throws -> BeaconConfig {
         try require(BeaconRequest(op: .setConfig, config: config)).config ?? config
+    }
+
+    /// Starts the project's run command. Returns at once; poll `runStatus`.
+    @discardableResult
+    public func start(name: String) throws -> RunStatus? {
+        try require(BeaconRequest(op: .start, name: name)).run
+    }
+
+    @discardableResult
+    public func stop(name: String) throws -> RunStatus? {
+        try require(BeaconRequest(op: .stop, name: name)).run
+    }
+
+    public func runStatus(name: String) throws -> RunStatus? {
+        try require(BeaconRequest(op: .runStatus, name: name)).run
+    }
+
+    // MARK: Sharing
+
+    @discardableResult
+    public func share(_ spec: ShareSpec) throws -> RelayStatus? {
+        try require(BeaconRequest(op: .share, share: spec)).relay
+    }
+
+    @discardableResult
+    public func unshare(name: String) throws -> RelayStatus? {
+        try require(BeaconRequest(op: .unshare, name: name)).relay
+    }
+
+    public func relayStatus() throws -> RelayStatus? {
+        try require(BeaconRequest(op: .relayStatus)).relay
+    }
+
+    @discardableResult
+    public func setRelay(_ spec: RelaySpec) throws -> RelayStatus? {
+        try require(BeaconRequest(op: .setRelay, relay: spec)).relay
     }
 
     /// Asks the daemon to exit; launchd's KeepAlive starts a fresh one.

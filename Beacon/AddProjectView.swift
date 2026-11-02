@@ -9,10 +9,13 @@ struct AddProjectView: View {
 
     @State private var name = ""
     @State private var domain = ""
+    @State private var port = ""
     @State private var path = ""
     @State private var secure = true
     @State private var isWorking = false
     @State private var error: String?
+    /// A free port the daemon offered when it refused the one asked for.
+    @State private var errorSuggestion: Int?
     @State private var added: Site?
 
     var body: some View {
@@ -60,6 +63,16 @@ struct AddProjectView: View {
                         .font(.beaconMonoLarge)
                 }
                 Divider().overlay(Color.beaconHairline)
+                field("Port") {
+                    TextField("", text: $port, prompt: placeholder("Automatic"))
+                        .textFieldStyle(.plain)
+                        .font(.beaconMonoLarge)
+                        .onChange(of: port) { _, _ in
+                            error = nil
+                            errorSuggestion = nil
+                        }
+                }
+                Divider().overlay(Color.beaconHairline)
                 field("Folder") {
                     HStack(spacing: 8) {
                         Text(path.isEmpty ? "Optional" : abbreviated(path))
@@ -86,15 +99,19 @@ struct AddProjectView: View {
             }
             .beaconCard()
 
-            Text("The port comes from \(String(model.config.portRangeStart))–\(String(model.config.portRangeEnd)) and stays with this project.")
-                .font(.beaconLabel)
-                .foregroundStyle(Color.beaconSecondaryText)
+            portNote
 
             if let error {
-                Label(error, systemImage: "exclamationmark.triangle.fill")
-                    .font(.beaconLabel)
-                    .foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                        .font(.beaconLabel)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let errorSuggestion {
+                        Spacer(minLength: 0)
+                        useButton(errorSuggestion)
+                    }
+                }
             }
 
             HStack(spacing: 8) {
@@ -117,7 +134,7 @@ struct AddProjectView: View {
                 }
                 .buttonStyle(.signal)
                 .keyboardShortcut(.defaultAction)
-                .disabled(Site.slug(name).isEmpty || isWorking)
+                .disabled(Site.slug(name).isEmpty || isWorking || portCheck.blocksSubmit)
             }
         }
         .padding(24)
@@ -133,6 +150,103 @@ struct AddProjectView: View {
         }
         .padding(.horizontal, 14)
         .frame(minHeight: 40)
+    }
+
+    // MARK: - Port
+
+    private enum PortCheck {
+        case automatic
+        case invalid
+        case beacon(suggestion: Int?)
+        case taken(by: Site, suggestion: Int?)
+        case busy(Int)
+        case free(Int)
+
+        var blocksSubmit: Bool {
+            switch self {
+            case .invalid, .beacon, .taken: return true
+            case .automatic, .busy, .free: return false
+            }
+        }
+    }
+
+    /// Checked as the user types, against the same rules the daemon applies,
+    /// so a clash shows before they press Add rather than after.
+    private var portCheck: PortCheck {
+        let trimmed = port.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return .automatic }
+        guard let value = Int(trimmed), (1...65535).contains(value) else { return .invalid }
+
+        let slug = Site.slug(name)
+        let others = model.sites.filter { $0.name != slug }
+        if daemonPorts.contains(value) {
+            return .beacon(suggestion: suggestPort(near: value, avoiding: others))
+        }
+        if let owner = others.first(where: { $0.port == value }) {
+            return .taken(by: owner, suggestion: suggestPort(near: value, avoiding: others))
+        }
+        // This project's own server already up on its own port isn't a clash.
+        let ownPort = model.sites.first { $0.name == slug }?.port
+        if ownPort != value, PortProbe.isListening(value) { return .busy(value) }
+        return .free(value)
+    }
+
+    private var daemonPorts: Set<Int> {
+        guard let status = model.status else { return [] }
+        return [status.httpPort, status.httpsPort, status.dnsPort]
+    }
+
+    private func suggestPort(near port: Int, avoiding others: [Site]) -> Int? {
+        let taken = Set(others.map(\.port)).union(daemonPorts)
+        let start = max(port, 1024)
+        return (start...min(65535, start + 1000)).first {
+            !taken.contains($0) && !PortProbe.isListening($0)
+        }
+    }
+
+    @ViewBuilder
+    private var portNote: some View {
+        switch portCheck {
+        case .automatic:
+            note("Beacon picks a free port from \(String(model.config.portRangeStart))–\(String(model.config.portRangeEnd)) and keeps it for this project.")
+        case .invalid:
+            note("A port is a number from 1 to 65535.", color: .red, icon: "exclamationmark.triangle.fill")
+        case .beacon(let suggestion):
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                note("Beacon itself listens on port \(port.trimmingCharacters(in: .whitespaces)).",
+                     color: .red, icon: "exclamationmark.triangle.fill")
+                if let suggestion { Spacer(minLength: 0); useButton(suggestion) }
+            }
+        case .taken(let owner, let suggestion):
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                note("Port \(String(owner.port)) is reserved for \(owner.name) (\(owner.domain)).",
+                     color: .red, icon: "exclamationmark.triangle.fill")
+                if let suggestion { Spacer(minLength: 0); useButton(suggestion) }
+            }
+        case .busy(let value):
+            note("Something is already listening on \(String(value)). Beacon will reserve it, but make sure it's this project's server.",
+                 color: .orange, icon: "exclamationmark.circle.fill")
+        case .free(let value):
+            note("Port \(String(value)) is free and will stay with this project.")
+        }
+    }
+
+    private func note(_ text: String, color: Color = .beaconSecondaryText, icon: String? = nil) -> some View {
+        Group {
+            if let icon {
+                Label(text, systemImage: icon)
+            } else {
+                Text(text)
+            }
+        }
+        .font(.beaconLabel)
+        .foregroundStyle(color)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func useButton(_ suggestion: Int) -> some View {
+        Button("Use \(String(suggestion))") { port = String(suggestion) }
+            .controlSize(.small)
     }
 
     // MARK: -
@@ -168,17 +282,21 @@ struct AddProjectView: View {
     private func submit() {
         isWorking = true
         error = nil
+        errorSuggestion = nil
         Task {
             let result = await model.register(
                 name: name,
                 domain: domain.isEmpty ? nil : domain,
+                port: Int(port.trimmingCharacters(in: .whitespaces)),
                 path: path.isEmpty ? nil : path,
                 secure: secure
             )
             isWorking = false
             switch result {
             case .success(let site): added = site
-            case .failure(let failure): error = failure.message
+            case .failure(let failure):
+                error = failure.message
+                errorSuggestion = failure.details?["suggestedPort"].flatMap(Int.init)
             }
         }
     }
@@ -186,8 +304,10 @@ struct AddProjectView: View {
     private func reset() {
         name = ""
         domain = ""
+        port = ""
         path = ""
         error = nil
+        errorSuggestion = nil
         added = nil
         secure = model.config.defaultSecure
     }

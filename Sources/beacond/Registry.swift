@@ -10,6 +10,11 @@ final class Registry: @unchecked Sendable {
     private var sitesByName: [String: Site] = [:]
     private var config: BeaconConfig = .default
 
+    /// Ports the daemon itself listens on (HTTP, HTTPS, DNS). No project may
+    /// claim one: its dev server could never bind it, and the domain would
+    /// route back into the proxy.
+    var daemonPorts: Set<Int> = []
+
     /// Called after any change that affects routing or certificates.
     var onChange: (@Sendable (RegistrySnapshot) -> Void)?
 
@@ -96,6 +101,11 @@ final class Registry: @unchecked Sendable {
 
             let port = try resolvePortLocked(spec: spec, name: name, existing: existing)
 
+            var run = existing?.run
+            if let requested = spec.run?.trimmingCharacters(in: .whitespacesAndNewlines) {
+                run = (requested.isEmpty || requested == "auto") ? nil : .custom(requested)
+            }
+
             let site = Site(
                 name: name,
                 domain: domain,
@@ -103,6 +113,7 @@ final class Registry: @unchecked Sendable {
                 path: spec.path ?? existing?.path,
                 aliases: Array(Set(aliases)).sorted(),
                 secure: spec.secure ?? existing?.secure ?? config.defaultSecure,
+                run: run,
                 createdAt: existing?.createdAt ?? Date()
             )
             sitesByName[name] = site
@@ -192,13 +203,35 @@ final class Registry: @unchecked Sendable {
 
         if let requested = spec.port {
             guard (1...65535).contains(requested) else {
-                throw BeaconClientError(code: "bad_port", message: "\(requested) isn't a usable port.")
+                throw BeaconClientError(
+                    code: "bad_port",
+                    message: "\(requested) isn't a usable port. Pick one between 1 and 65535.",
+                    details: ["port": String(requested)]
+                )
             }
-            if takenByOthers.contains(requested) {
-                let owner = sitesByName.values.first { $0.port == requested }?.name ?? "another project"
+            if daemonPorts.contains(requested) {
+                let suggestion = suggestPortLocked(near: requested, avoiding: takenByOthers)
+                throw BeaconClientError(
+                    code: "port_reserved_by_beacon",
+                    message: """
+                    Port \(requested) is one Beacon itself listens on, so no project can use it.\
+                    \(suggestionSentence(suggestion))
+                    """,
+                    details: portDetails(requested: requested, suggestion: suggestion)
+                )
+            }
+            if let owner = sitesByName.values.first(where: { $0.name != name && $0.port == requested }) {
+                let suggestion = suggestPortLocked(near: requested, avoiding: takenByOthers)
+                var details = portDetails(requested: requested, suggestion: suggestion)
+                details["owner"] = owner.name
+                details["ownerDomain"] = owner.domain
                 throw BeaconClientError(
                     code: "port_taken",
-                    message: "Port \(requested) is already reserved for '\(owner)'."
+                    message: """
+                    Port \(requested) is already reserved for '\(owner.name)' (\(owner.domain)).\
+                    \(suggestionSentence(suggestion))
+                    """,
+                    details: details
                 )
             }
             return requested
@@ -223,6 +256,32 @@ final class Registry: @unchecked Sendable {
             )
         }
         return port
+    }
+
+    /// The closest port at or above `port` that no project holds, Beacon
+    /// doesn't use, and nothing is listening on. Falls back to the configured
+    /// range when everything above is spoken for.
+    private func suggestPortLocked(near port: Int, avoiding taken: Set<Int>) -> Int? {
+        let avoid = taken.union(daemonPorts)
+        let upper = min(65535, max(port, 1024) + 1000)
+        if port <= upper,
+           let nearby = PortAllocator.allocate(in: max(port, 1024)...upper, avoiding: avoid) {
+            return nearby
+        }
+        return PortAllocator.allocate(in: config.portRange, avoiding: avoid)
+    }
+
+    private func suggestionSentence(_ suggestion: Int?) -> String {
+        guard let suggestion else {
+            return " Leave the port out and Beacon will choose a free one."
+        }
+        return " Port \(suggestion) is free. Ask for that one, or leave the port out and Beacon will choose."
+    }
+
+    private func portDetails(requested: Int, suggestion: Int?) -> [String: String] {
+        var details = ["port": String(requested)]
+        if let suggestion { details["suggestedPort"] = String(suggestion) }
+        return details
     }
 
     // MARK: - Persistence

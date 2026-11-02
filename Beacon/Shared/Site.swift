@@ -13,6 +13,9 @@ public struct Site: Codable, Hashable, Identifiable, Sendable {
     public var aliases: [String]
     /// Whether links handed back to humans should be https.
     public var secure: Bool
+    /// How to start the project, when someone set it explicitly. Otherwise
+    /// Beacon detects it from the project directory each time; see `runSpec`.
+    public var run: RunSpec?
     public var createdAt: Date
 
     public init(
@@ -22,6 +25,7 @@ public struct Site: Codable, Hashable, Identifiable, Sendable {
         path: String? = nil,
         aliases: [String] = [],
         secure: Bool = true,
+        run: RunSpec? = nil,
         createdAt: Date = Date()
     ) {
         self.name = name
@@ -30,11 +34,12 @@ public struct Site: Codable, Hashable, Identifiable, Sendable {
         self.path = path
         self.aliases = aliases
         self.secure = secure
+        self.run = run
         self.createdAt = createdAt
     }
 
     private enum CodingKeys: String, CodingKey {
-        case name, domain, port, path, aliases, secure, createdAt
+        case name, domain, port, path, aliases, secure, run, createdAt
         case url, httpUrl, origin
     }
 
@@ -46,6 +51,7 @@ public struct Site: Codable, Hashable, Identifiable, Sendable {
         path = try container.decodeIfPresent(String.self, forKey: .path)
         aliases = try container.decodeIfPresent([String].self, forKey: .aliases) ?? []
         secure = try container.decodeIfPresent(Bool.self, forKey: .secure) ?? true
+        run = try container.decodeIfPresent(RunSpec.self, forKey: .run)
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
     }
 
@@ -60,6 +66,7 @@ public struct Site: Codable, Hashable, Identifiable, Sendable {
         try container.encodeIfPresent(path, forKey: .path)
         try container.encode(aliases, forKey: .aliases)
         try container.encode(secure, forKey: .secure)
+        try container.encodeIfPresent(run, forKey: .run)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(url, forKey: .url)
         try container.encode(httpURL, forKey: .httpUrl)
@@ -74,6 +81,14 @@ public struct Site: Codable, Hashable, Identifiable, Sendable {
     public var httpsURL: String { "https://" + domain }
     /// Where the project's own dev server must listen.
     public var origin: String { "http://127.0.0.1:\(port)" }
+
+    /// How Beacon would start this project: the explicit command if one was
+    /// set, otherwise whatever the project directory suggests.
+    public var runSpec: RunSpec? {
+        if let run { return run }
+        guard let path else { return nil }
+        return RunDetector.detect(in: path, port: port)
+    }
 
     /// Every hostname that routes here.
     public var allDomains: [String] { [domain] + aliases }

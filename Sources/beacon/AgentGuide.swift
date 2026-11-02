@@ -82,6 +82,27 @@ extension BeaconCLI {
             3. Use `url` for anything the app needs to know its own address:
                `APP_URL`, `VITE_DEV_SERVER_URL`, OAuth callbacks, webhook targets.
 
+            If the project needs one particular port (a hard-coded OAuth callback,
+            say), ask for it with `beacon register --port 3000 --json`. If another
+            project already holds it, the command exits 1 and prints:
+
+            ```json
+            {
+              "ok": false,
+              "error": {
+                "code": "port_taken",
+                "message": "Port 3000 is already reserved for 'shop' (shop.\(example)). ...",
+                "owner": "shop",
+                "port": 3000,
+                "suggestedPort": 3001,
+                "hint": "beacon register myproject --port 3001 --json"
+              }
+            }
+            ```
+
+            Run `hint`, or drop `--port` and let Beacon choose. Never take a port
+            from another project.
+
             Useful one-liners:
 
             ```sh

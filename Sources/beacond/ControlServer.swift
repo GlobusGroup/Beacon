@@ -6,13 +6,20 @@ import NIOPosix
 /// Answers requests from the `beacon` CLI and the menu bar app.
 final class ControlService: @unchecked Sendable {
     private let registry: Registry
+    private let runner: ProjectRunner
+    private let tunnel: TunnelClient
     private let startedAt = Date()
     private let httpPort: Int
     private let httpsPort: Int
     private let dnsPort: Int
 
-    init(registry: Registry, httpPort: Int, httpsPort: Int, dnsPort: Int) {
+    init(
+        registry: Registry, runner: ProjectRunner, tunnel: TunnelClient,
+        httpPort: Int, httpsPort: Int, dnsPort: Int
+    ) {
         self.registry = registry
+        self.runner = runner
+        self.tunnel = tunnel
         self.httpPort = httpPort
         self.httpsPort = httpsPort
         self.dnsPort = dnsPort
@@ -74,6 +81,40 @@ final class ControlService: @unchecked Sendable {
                 }
                 return BeaconResponse()
 
+            case .start, .stop, .runStatus:
+                guard let name = request.name else {
+                    return .failure("missing_name", "Which project?")
+                }
+                guard let site = registry.site(named: name) else {
+                    return .failure("unknown_site", "No project named '\(name)'.")
+                }
+                switch request.op {
+                case .start: return BeaconResponse(run: try runner.start(site))
+                case .stop: return BeaconResponse(run: runner.stop(site))
+                default: return BeaconResponse(run: runner.status(for: site))
+                }
+
+            case .share:
+                guard let spec = request.share else {
+                    return .failure("missing_share", "Which project?")
+                }
+                return BeaconResponse(relay: try tunnel.share(spec))
+
+            case .unshare:
+                guard let name = request.name else {
+                    return .failure("missing_name", "Which project?")
+                }
+                return BeaconResponse(relay: try tunnel.unshare(name))
+
+            case .relayStatus:
+                return BeaconResponse(relay: tunnel.currentStatus)
+
+            case .setRelay:
+                guard let spec = request.relay else {
+                    return .failure("missing_relay", "No relay settings were sent.")
+                }
+                return BeaconResponse(relay: try tunnel.setRelay(spec))
+
             case .setConfig:
                 guard let config = request.config else {
                     return .failure("missing_config", "No configuration was sent.")
@@ -81,7 +122,7 @@ final class ControlService: @unchecked Sendable {
                 return BeaconResponse(config: try registry.updateConfig(config))
             }
         } catch let error as BeaconClientError {
-            return .failure(error.code, error.message)
+            return .failure(error.code, error.message, details: error.details)
         } catch {
             return .failure("internal_error", error.localizedDescription)
         }

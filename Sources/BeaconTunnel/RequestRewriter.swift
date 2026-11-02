@@ -16,8 +16,8 @@ import NIOCore
 ///
 /// Once the connection stops being HTTP — a WebSocket upgrade, or CONNECT —
 /// the rewriter switches to `raw` and copies bytes verbatim for good.
-final class RequestRewriter {
-    enum Outcome {
+public final class RequestRewriter {
+    public enum Outcome {
         /// Bytes ready to go upstream. May be empty if more input is needed.
         case forward(ByteBuffer)
         /// The head was unparseable or implausibly large.
@@ -38,24 +38,42 @@ final class RequestRewriter {
     private let scheme: String
     private let listenPort: Int
     private let clientIP: String
+    private let trustForwardedFor: Bool
+    private let maxRequests: Int?
+    private let closeConnection: Bool
+    private var headsSeen = 0
 
     /// Host from the first request head, used to pick the upstream.
-    private(set) var host: String?
+    public private(set) var host: String?
+    /// The first request head on the connection, as the client sent it.
+    public private(set) var firstHead: HTTPHead?
 
-    init(allocator: ByteBufferAllocator, scheme: String, listenPort: Int, clientIP: String) {
+    /// - Parameters:
+    ///   - trustForwardedFor: take the client address from the last entry of an
+    ///     incoming `X-Forwarded-For`, for a rewriter sitting behind a proxy it trusts.
+    ///   - maxRequests: stop forwarding after this many request heads. Later
+    ///     input is held back, never written upstream.
+    ///   - closeConnection: ask the upstream to close after each response.
+    public init(
+        allocator: ByteBufferAllocator, scheme: String, listenPort: Int, clientIP: String,
+        trustForwardedFor: Bool = false, maxRequests: Int? = nil, closeConnection: Bool = false
+    ) {
         self.buffer = allocator.buffer(capacity: 4096)
         self.scheme = scheme
         self.listenPort = listenPort
         self.clientIP = clientIP
+        self.trustForwardedFor = trustForwardedFor
+        self.maxRequests = maxRequests
+        self.closeConnection = closeConnection
     }
 
-    func append(_ incoming: inout ByteBuffer) {
+    public func append(_ incoming: inout ByteBuffer) {
         buffer.writeBuffer(&incoming)
     }
 
     /// Consumes as much of the buffered input as it can, returning what should
     /// be written upstream.
-    func drain(allocator: ByteBufferAllocator) -> Outcome {
+    public func drain(allocator: ByteBufferAllocator) -> Outcome {
         var out = allocator.buffer(capacity: buffer.readableBytes + 256)
 
         loop: while true {
@@ -68,6 +86,7 @@ final class RequestRewriter {
 
             case .awaitingHead:
                 guard buffer.readableBytes > 0 else { break loop }
+                if let maxRequests, headsSeen >= maxRequests { break loop }
                 guard let head = HTTPHead.parse(buffer) else {
                     if buffer.readableBytes > HTTPHead.maxSize {
                         return .malformed(reason: "the request head exceeded \(HTTPHead.maxSize / 1024)KB")
@@ -75,12 +94,15 @@ final class RequestRewriter {
                     break loop
                 }
                 if host == nil { host = head.host }
+                if firstHead == nil { firstHead = head }
                 guard let currentHost = head.host ?? host else {
                     return .malformed(reason: "the request had no Host header")
                 }
 
+                headsSeen += 1
                 out.writeBytes(head.rewritten(
-                    proto: scheme, host: currentHost, port: listenPort, clientIP: clientIP
+                    proto: scheme, host: currentHost, port: listenPort,
+                    clientIP: clientAddress(for: head), closeConnection: closeConnection
                 ))
                 buffer.moveReaderIndex(forwardBy: head.byteLength)
                 mode = framing(after: head)
@@ -115,6 +137,14 @@ final class RequestRewriter {
 
         buffer.discardReadBytes()
         return .forward(out)
+    }
+
+    private func clientAddress(for head: HTTPHead) -> String {
+        guard trustForwardedFor, let forwarded = head.value(of: "X-Forwarded-For") else { return clientIP }
+        // The trusted proxy appends the address it saw, so the last entry is
+        // the only one it vouches for.
+        let last = forwarded.split(separator: ",").last.map { $0.trimmingCharacters(in: .whitespaces) }
+        return last.flatMap { $0.isEmpty ? nil : $0 } ?? clientIP
     }
 
     /// How long this request's body is, or whether the connection stops being
