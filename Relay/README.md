@@ -12,86 +12,20 @@ browser ──https──▶ Traefik ──http──▶ beacon-relay ══ Web
 
 ## Setting it up
 
-### 1. DNS (Cloudflare)
-
-Two records, both **DNS only** (grey cloud), pointing at the server:
-
-| Type | Name | Content |
-| --- | --- | --- |
-| `A` | `beacon.cab` | server IP |
-| `A` | `*` | server IP |
-
-The relay never creates DNS records. The wildcard makes every name resolve,
-and the relay decides which ones are live.
-
-### 2. A wildcard certificate in Traefik
-
-Traefik needs a certificate covering `beacon.cab` and `*.beacon.cab`. Wildcards
-can only be issued through the DNS challenge, so Traefik needs a Cloudflare API
-token with **Zone → DNS → Edit** on the `beacon.cab` zone, passed to Traefik as
-`CF_DNS_API_TOKEN`. If your Traefik already has a Cloudflare resolver, reuse
-it. Otherwise, add one to Traefik's static configuration:
-
-```yaml
-certificatesResolvers:
-  cloudflare:
-    acme:
-      email: you@example.com
-      storage: /letsencrypt/acme.json
-      dnsChallenge:
-        provider: cloudflare
-```
-
-The compose file's labels ask that resolver for both names.
-
-### 3. Tokens and start
+The main README has the [step-by-step guide](../README.md#run-your-own-relay):
+DNS, a wildcard certificate in Traefik, tokens, and the compose file and
+`.env` for your server or hosting panel.
 
 The image is built by GitHub Actions
 ([`relay-image.yml`](../.github/workflows/relay-image.yml)) and pushed to
 `ghcr.io/globusgroup/beacon-relay`:
 
-- every push to `main` that touches the relay → tag `main`
-- every `v1.2.3` tag → tags `1.2.3` and `1.2`
-- every build → the commit's short SHA
+- every push to `main` that touches the relay gets tag `main`
+- every `v1.2.3` tag gets tags `1.2.3` and `1.2`
+- every build gets the commit's short SHA
 
-The server needs only this directory's `docker-compose.yml` and a `.env`:
-
-```bash
-cp .env.example .env    # set IMAGE_TAG, BEACON_DOMAIN and BEACON_TOKENS
-docker compose pull && docker compose up -d
-curl https://beacon.cab/healthz
-```
-
-While the package is private on GHCR, log the server in once with a token
-that has `read:packages`: `docker login ghcr.io -u <github user>`.
-
-To build the image yourself instead, from the package root:
+To build the image yourself, from the package root:
 `docker build -f Relay/Dockerfile -t ghcr.io/globusgroup/beacon-relay:dev .`
-
-`BEACON_TOKENS` is a list of `label:token` pairs:
-
-```
-BEACON_TOKENS=dean:3f9c…,sam:81aa…
-```
-
-The label is whoever holds the token. It appears in the logs and namespaces
-their URLs: Dean sharing `shop` gets `shop-dean.beacon.cab`, Sam sharing `shop`
-gets `shop-sam.beacon.cab`. Generate tokens with `openssl rand -hex 24`. To
-revoke one, remove it and run `docker compose up -d`; the relay keeps no other
-state, so a restart costs nothing but a few seconds of reconnects.
-
-Match `TRAEFIK_NETWORK`, `TRAEFIK_ENTRYPOINT` and `TRAEFIK_CERTRESOLVER` in
-`.env` to your Traefik setup. The labels use Traefik v3 rule syntax.
-
-### 4. On each Mac
-
-```bash
-beacon relay --url beacon.cab --token <their token>
-beacon share shop                    # → https://shop-dean.beacon.cab
-beacon share shop --password hunter2 # visitors must give it (any username)
-beacon unshare shop
-beacon relay                         # what's shared, and the tunnel's state
-```
 
 ## How it behaves
 
