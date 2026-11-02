@@ -11,6 +11,12 @@ enum ActionOutcome: Equatable {
     case failed(String)
 }
 
+/// A part of Settings to point the user at when something else opens it.
+enum SettingsHighlight: Hashable {
+    /// The background service row, with its Update button.
+    case service
+}
+
 /// The things that make macOS ask the user for permission. Each one is
 /// introduced by `PermissionExplainer` before the system prompt appears.
 enum PrivilegedAction: String, Identifiable {
@@ -48,6 +54,9 @@ final class BeaconModel: ObservableObject {
     @Published private(set) var runs: [String: RunStatus] = [:]
     /// Projects Beacon knows how to start.
     @Published private(set) var runnable: Set<String> = []
+    /// Set just before opening Settings from elsewhere, so Settings scrolls
+    /// to that row and tints it. Settings clears it after a moment.
+    @Published var settingsHighlight: SettingsHighlight?
     /// The tunnel to the relay and what's shared through it. Nil while the
     /// daemon is down, or when it predates sharing.
     @Published private(set) var relay: RelayStatus?
@@ -98,7 +107,8 @@ final class BeaconModel: ObservableObject {
         notice: String? = nil,
         runs: [String: RunStatus] = [:],
         runnable: Set<String> = [],
-        relay: RelayStatus? = nil
+        relay: RelayStatus? = nil,
+        settingsHighlight: SettingsHighlight? = nil
     ) {
         self.status = previewRunning
             ? DaemonStatus(
@@ -115,6 +125,7 @@ final class BeaconModel: ObservableObject {
         self.runs = runs
         self.runnable = runnable
         self.relay = relay
+        self.settingsHighlight = settingsHighlight
         self.hasLoaded = true
     }
     #endif

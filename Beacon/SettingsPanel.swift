@@ -21,6 +21,15 @@ struct SettingsPanel: View {
     @State private var outcome: (action: PrivilegedAction, result: ActionOutcome)?
 
     var body: some View {
+        ScrollViewReader { proxy in
+            form
+                .onChange(of: model.settingsHighlight, initial: true) { _, target in
+                    reveal(target, with: proxy)
+                }
+        }
+    }
+
+    private var form: some View {
         Form {
             routingSection
             sharingSection
@@ -214,6 +223,8 @@ struct SettingsPanel: View {
                     StatusLabel(text: "Not installed", tone: .idle)
                 }
             }
+            .background { highlight(.service) }
+            .id(SettingsHighlight.service)
 
             LabeledContent("Resolver") {
                 if !model.isRunning {
@@ -317,6 +328,31 @@ struct SettingsPanel: View {
             Label(message, systemImage: "exclamationmark.triangle.fill")
                 .font(.beaconLabel)
                 .foregroundStyle(.red)
+        }
+    }
+
+    // MARK: - Pointing at a row
+
+    /// The selection tint behind a row while Settings is pointing at it.
+    private func highlight(_ target: SettingsHighlight) -> some View {
+        RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .fill(Color.beaconSelection)
+            .padding(.horizontal, -8)
+            .padding(.vertical, -6)
+            .opacity(model.settingsHighlight == target ? 1 : 0)
+    }
+
+    /// Scrolls to the row, then lets the tint fade once the user has seen it.
+    private func reveal(_ target: SettingsHighlight?, with proxy: ScrollViewProxy) {
+        guard let target else { return }
+        // The window may still be appearing; scroll once it has laid out.
+        DispatchQueue.main.async {
+            withAnimation(.easeInOut(duration: 0.3)) { proxy.scrollTo(target, anchor: .center) }
+        }
+        Task {
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            guard model.settingsHighlight == target else { return }
+            withAnimation(.easeOut(duration: 0.8)) { model.settingsHighlight = nil }
         }
     }
 

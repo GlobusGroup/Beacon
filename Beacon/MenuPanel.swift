@@ -24,7 +24,10 @@ struct MenuPanel: View {
                 if model.isRunning { Divider().overlay(Color.beaconHairline) }
             } else if model.serviceOutdated {
                 // The password prompt is introduced in Settings, like every other.
-                ServiceUpdateCard { AppWindows.openSettings(with: openSettings) }
+                ServiceUpdateCard {
+                    model.settingsHighlight = .service
+                    AppWindows.openSettings(with: openSettings)
+                }
                     .padding(12)
                 Divider().overlay(Color.beaconHairline)
             }

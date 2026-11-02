@@ -32,6 +32,10 @@ enum SnapshotRenderer {
         let outdated = BeaconModel(
             previewRunning: true, trusted: true, serviceVersion: "1.0.0", sites: projects, onlinePorts: [3101]
         )
+        let outdatedFromMenu = BeaconModel(
+            previewRunning: true, trusted: true, serviceVersion: "1.0.0", sites: projects, onlinePorts: [3101],
+            settingsHighlight: .service
+        )
         let withNotice = BeaconModel(
             previewRunning: true, trusted: true, sites: projects, onlinePorts: [3101],
             notice: "Couldn't remove shop.test: the service didn't answer. Restart it from Settings."
@@ -102,6 +106,7 @@ enum SnapshotRenderer {
             ("settings-not-installed", AnyView(SettingsPanel()), fresh),
             ("menu-10-service-outdated", AnyView(MenuPanel()), outdated),
             ("settings-service-outdated", AnyView(SettingsPanel()), outdated),
+            ("settings-service-highlighted", AnyView(SettingsPanel()), outdatedFromMenu),
         ]
         for action in [PrivilegedAction.install, .update, .trust, .uninstall] {
             shots.append(("explainer-\(action.rawValue)", AnyView(PermissionExplainer(action: action) { _ in }), ready))
