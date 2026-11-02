@@ -53,6 +53,25 @@ final class RelayHub {
         return "\(config.publicScheme)://\(host)\(port)"
     }
 
+    func isConnected(label: String) -> Bool {
+        sessions.values.contains { $0.label == label }
+    }
+
+    func publicURLs(label: String) -> [String] {
+        sessions.values.filter { $0.label == label }
+            .flatMap(\.routes.keys)
+            .filter { routes[$0]?.session.label == label }
+            .sorted()
+            .map(publicURL(for:))
+    }
+
+    /// Drops every tunnel opened with a label's token, once it's revoked.
+    func disconnect(label: String) {
+        for session in sessions.values where session.label == label {
+            session.mux.channel.close(promise: nil)
+        }
+    }
+
     // MARK: - Sessions
 
     func attach(_ session: RelaySession) {

@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SettingsPanel: View {
     @EnvironmentObject private var model: BeaconModel
@@ -16,6 +17,8 @@ struct SettingsPanel: View {
     @State private var relayToken = ""
     @State private var relayLoaded = false
     @State private var relayError: String?
+    @State private var importingInvite = false
+    @State private var managingTokens = false
 
     @State private var explaining: PrivilegedAction?
     @State private var outcome: (action: PrivilegedAction, result: ActionOutcome)?
@@ -33,6 +36,7 @@ struct SettingsPanel: View {
         Form {
             routingSection
             sharingSection
+            if model.relayTokens != nil { relayAccessSection }
             agentsSection
             serviceSection
             updatesSection
@@ -47,6 +51,14 @@ struct SettingsPanel: View {
         }
         .onChange(of: model.config) { _, _ in if !isDirty { load(force: true) } }
         .onChange(of: model.relay?.url) { _, _ in if !relayDirty { loadRelay(force: true) } }
+        .onChange(of: model.pendingInvite, initial: true) { _, pending in
+            guard let pending else { return }
+            relayURL = pending.invite.relay
+            relayToken = pending.invite.token
+            relayLoaded = true
+            relayError = nil
+        }
+        .task { await model.loadRelayTokens() }
         .sheet(item: $explaining) { action in
             PermissionExplainer(action: action) { purge in run(action, purge: purge) }
         }
@@ -122,6 +134,23 @@ struct SettingsPanel: View {
                 }
                 LabeledContent("Tunnel") { tunnelStatus }
 
+                if let pending = model.pendingInvite {
+                    HStack(alignment: .firstTextBaseline) {
+                        Label("Filled in from \(pending.fileName), for \(pending.invite.label). Apply to start using it.", systemImage: "doc.badge.arrow.up")
+                            .font(.beaconLabel)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer()
+                        Button("Discard") {
+                            model.pendingInvite = nil
+                            relayToken = ""
+                            loadRelay(force: true)
+                        }
+                        .controlSize(.small)
+                    }
+                    .background { highlight(.sharing) }
+                    .id(SettingsHighlight.sharing)
+                }
+
                 HStack {
                     if let relayError {
                         Label(relayError, systemImage: "exclamationmark.triangle.fill")
@@ -133,6 +162,8 @@ struct SettingsPanel: View {
                             .foregroundStyle(Color.beaconSecondaryText)
                     }
                     Spacer()
+                    Button("Open .beacon…") { importingInvite = true }
+                        .help("Fill in the relay from a .beacon file an admin sent you.")
                     if model.relayConfigured {
                         Button("Turn off") { applyRelay(url: "", token: "") }
                             .disabled(model.activity == .saving)
@@ -147,6 +178,36 @@ struct SettingsPanel: View {
             Text("Sharing")
         }
         .onAppear { loadRelay() }
+        .fileImporter(isPresented: $importingInvite, allowedContentTypes: [.beaconInvite]) { result in
+            if case .success(let url) = result { model.openInvite(url) }
+        }
+    }
+
+    // MARK: - Relay access
+
+    private var relayAccessSection: some View {
+        Section {
+            let tokens = model.relayTokens ?? []
+            LabeledContent("People") {
+                Text("\(tokens.count) token\(tokens.count == 1 ? "" : "s") · \(tokens.filter(\.connected).count) connected")
+                    .font(.beaconLabel)
+            }
+            HStack {
+                Text("Your token is an admin token, so you can let others use this relay.")
+                    .font(.beaconLabel)
+                    .foregroundStyle(Color.beaconSecondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer()
+                Button("Manage…") { managingTokens = true }
+                    .buttonStyle(.signalCompact)
+            }
+        } header: {
+            Text("Relay access")
+        }
+        .sheet(isPresented: $managingTokens) {
+            RelayAccessView()
+                .environmentObject(model)
+        }
     }
 
     @ViewBuilder
@@ -191,8 +252,12 @@ struct SettingsPanel: View {
         relayError = nil
         Task {
             relayError = await model.setRelay(url: url, token: token)
-            if relayError == nil { relayToken = "" }
+            if relayError == nil {
+                relayToken = ""
+                model.pendingInvite = nil
+            }
             loadRelay(force: true)
+            await model.loadRelayTokens()
         }
     }
 

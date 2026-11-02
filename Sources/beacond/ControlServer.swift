@@ -25,6 +25,11 @@ final class ControlService: @unchecked Sendable {
         self.dnsPort = dnsPort
     }
 
+    /// Requests that wait on the network, and so mustn't run on an event loop.
+    static func blocks(_ op: BeaconRequest.Op) -> Bool {
+        [.relayTokens, .createRelayToken, .revokeRelayToken].contains(op)
+    }
+
     func handle(_ request: BeaconRequest) -> BeaconResponse {
         do {
             switch request.op {
@@ -115,6 +120,22 @@ final class ControlService: @unchecked Sendable {
                 }
                 return BeaconResponse(relay: try tunnel.setRelay(spec))
 
+            case .relayTokens:
+                return BeaconResponse(relayTokens: try tunnel.adminClient().list())
+
+            case .createRelayToken:
+                guard let spec = request.relayToken else {
+                    return .failure("missing_token_spec", "Who is the token for?")
+                }
+                return BeaconResponse(invite: try tunnel.adminClient().create(spec))
+
+            case .revokeRelayToken:
+                guard let name = request.name else {
+                    return .failure("missing_name", "Which token?")
+                }
+                try tunnel.adminClient().revoke(name)
+                return BeaconResponse()
+
             case .setConfig:
                 guard let config = request.config else {
                     return .failure("missing_config", "No configuration was sent.")
@@ -160,14 +181,28 @@ final class ControlHandler: ChannelInboundHandler {
 
     private func respond(to line: ByteBuffer, context: ChannelHandlerContext) {
         let bytes = line.getBytes(at: line.readerIndex, length: line.readableBytes) ?? []
-        let response: BeaconResponse
+        let request: BeaconRequest
         do {
-            let request = try BeaconJSON.decoder.decode(BeaconRequest.self, from: Data(bytes))
-            response = service.handle(request)
+            request = try BeaconJSON.decoder.decode(BeaconRequest.self, from: Data(bytes))
         } catch {
-            response = .failure("bad_request", "Couldn't decode that request: \(error.localizedDescription)")
+            write(.failure("bad_request", "Couldn't decode that request: \(error.localizedDescription)"), context: context)
+            return
         }
 
+        guard ControlService.blocks(request.op) else {
+            write(service.handle(request), context: context)
+            return
+        }
+        let service = self.service
+        let loop = context.eventLoop
+        nonisolated(unsafe) let context = context
+        DispatchQueue.global().async {
+            let response = service.handle(request)
+            loop.execute { self.write(response, context: context) }
+        }
+    }
+
+    private func write(_ response: BeaconResponse, context: ChannelHandlerContext) {
         guard var payload = try? BeaconJSON.encoder.encode(response) else {
             context.close(promise: nil)
             return

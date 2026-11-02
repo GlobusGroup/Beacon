@@ -107,7 +107,12 @@ extension BeaconCLI {
 
             The token comes from whoever runs the relay. It's stored readable by \
             root only, and sent to nothing but the relay.
-            """
+
+            With an admin token, `beacon relay invite` makes tokens for other \
+            people, `beacon relay tokens` lists them and `beacon relay revoke` \
+            takes one away.
+            """,
+            subcommands: [RelayTokens.self, RelayInviteCommand.self, RelayRevoke.self]
         )
 
         @Option(name: .long, help: "The relay's domain, e.g. relay.example.com, or a wss:// URL.")
@@ -119,8 +124,14 @@ extension BeaconCLI {
         @Flag(name: .long, help: "Forget the relay and stop sharing everything.")
         var off = false
 
-        @Flag(name: .long, help: "Print as JSON.")
-        var json = false
+        /// Shared with the subcommands, which would otherwise lose `--json` to this command.
+        struct Options: ParsableArguments {
+            @Flag(name: .long, help: "Print as JSON.")
+            var json = false
+        }
+
+        @OptionGroup var options: Options
+        var json: Bool { options.json }
 
         func run() throws {
             var status: RelayStatus?

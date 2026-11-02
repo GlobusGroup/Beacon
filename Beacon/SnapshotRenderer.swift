@@ -98,7 +98,38 @@ enum SnapshotRenderer {
             )
         )
 
+        let adminRelay = RelayStatus(url: "relay.example.com", hasToken: true, state: .connected, label: "dean")
+        let tokens = [
+            RelayToken(label: "dean", note: nil, admin: true, source: .environment, createdAt: nil, createdBy: nil,
+                       connected: true, shares: ["https://studio-dean.relay.example.com"]),
+            RelayToken(label: "sam", note: "Sam's MacBook Pro", admin: false, source: .relay,
+                       createdAt: Date().addingTimeInterval(-86400 * 12), createdBy: "dean", connected: true,
+                       shares: ["https://shop-sam.relay.example.com", "https://api-sam.relay.example.com"]),
+            RelayToken(label: "alex", note: "Alex, design contractor", admin: false, source: .relay,
+                       createdAt: Date().addingTimeInterval(-86400 * 3), createdBy: "dean", connected: false, shares: []),
+            RelayToken(label: "ops", note: "Platform team", admin: true, source: .relay,
+                       createdAt: Date().addingTimeInterval(-86400 * 40), createdBy: "dean", connected: false, shares: []),
+        ]
+        let relayAdmin = BeaconModel(
+            previewRunning: true, trusted: true, sites: projects, relay: adminRelay, relayTokens: tokens
+        )
+        let inviteOpened = BeaconModel(
+            previewRunning: true, trusted: true, sites: projects,
+            relay: RelayStatus(url: nil, hasToken: false, state: .off),
+            settingsHighlight: .sharing,
+            pendingInvite: PendingInvite(
+                invite: RelayInvite(relay: "relay.example.com", token: "b417f8e67c117aaadf88065c4e3fa343007f1c09aa4d1305", label: "casey"),
+                fileName: "casey.beacon"
+            )
+        )
+
         var shots: [(String, AnyView, BeaconModel)] = [
+            ("settings-relay-admin", AnyView(SettingsPanel()), relayAdmin),
+            ("settings-invite-opened", AnyView(SettingsPanel()), inviteOpened),
+            ("relay-access-list", AnyView(RelayAccessView()), relayAdmin),
+            ("relay-access-created", AnyView(RelayAccessView(
+                justCreated: RelayInvite(relay: "relay.example.com", token: "x", label: "casey")
+            )), relayAdmin),
             ("menu-9-sharing", AnyView(MenuPanel()), sharing),
             ("menu-10-share-form", AnyView(
                 ProjectRow(site: projects[1], askingToShare: true).frame(width: 380).padding(.vertical, 6)

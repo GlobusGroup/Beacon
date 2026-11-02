@@ -25,6 +25,12 @@ public struct BeaconRequest: Codable, Sendable {
         case relayStatus
         /// Point Beacon at a relay, or turn sharing off.
         case setRelay
+        /// List the tokens the relay accepts. Needs an admin token.
+        case relayTokens
+        /// Make a token on the relay, for someone new. Needs an admin token.
+        case createRelayToken
+        /// Revoke the token labelled `name`. Needs an admin token.
+        case revokeRelayToken
     }
 
     public var op: Op
@@ -33,10 +39,11 @@ public struct BeaconRequest: Codable, Sendable {
     public var config: BeaconConfig?
     public var share: ShareSpec?
     public var relay: RelaySpec?
+    public var relayToken: RelayTokenSpec?
 
     public init(
         op: Op, name: String? = nil, register: RegisterSpec? = nil, config: BeaconConfig? = nil,
-        share: ShareSpec? = nil, relay: RelaySpec? = nil
+        share: ShareSpec? = nil, relay: RelaySpec? = nil, relayToken: RelayTokenSpec? = nil
     ) {
         self.op = op
         self.name = name
@@ -44,6 +51,7 @@ public struct BeaconRequest: Codable, Sendable {
         self.config = config
         self.share = share
         self.relay = relay
+        self.relayToken = relayToken
     }
 }
 
@@ -125,13 +133,17 @@ public struct BeaconResponse: Codable, Sendable {
     public var config: BeaconConfig?
     public var run: RunStatus?
     public var relay: RelayStatus?
+    public var relayTokens: [RelayToken]?
+    /// A token just created on the relay. Its only appearance anywhere.
+    public var invite: RelayInvite?
 
     public init(
         ok: Bool = true, errorCode: String? = nil, error: String? = nil,
         errorDetails: [String: String]? = nil,
         site: Site? = nil, sites: [Site]? = nil,
         status: DaemonStatus? = nil, config: BeaconConfig? = nil,
-        run: RunStatus? = nil, relay: RelayStatus? = nil
+        run: RunStatus? = nil, relay: RelayStatus? = nil,
+        relayTokens: [RelayToken]? = nil, invite: RelayInvite? = nil
     ) {
         self.ok = ok
         self.errorCode = errorCode
@@ -143,6 +155,8 @@ public struct BeaconResponse: Codable, Sendable {
         self.config = config
         self.run = run
         self.relay = relay
+        self.relayTokens = relayTokens
+        self.invite = invite
     }
 
     public static func failure(

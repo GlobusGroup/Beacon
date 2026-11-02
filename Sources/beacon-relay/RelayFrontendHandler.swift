@@ -26,13 +26,15 @@ final class RelayFrontendHandler: ChannelInboundHandler, RemovableChannelHandler
 
     private let hub: RelayHub
     private let config: RelayConfig
+    private let tokens: RelayTokens
     private var state: State = .reading
     private var raw = ByteBuffer()
     private var rewriter: RequestRewriter?
 
-    init(hub: RelayHub, config: RelayConfig) {
+    init(hub: RelayHub, config: RelayConfig, tokens: RelayTokens) {
         self.hub = hub
         self.config = config
+        self.tokens = tokens
     }
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
@@ -75,6 +77,10 @@ final class RelayFrontendHandler: ChannelInboundHandler, RemovableChannelHandler
         let isShareHost = host.hasSuffix("." + config.domain)
         if !isShareHost && path == TunnelProtocol.path {
             openTunnel(head, context: context)
+            return
+        }
+        if !isShareHost && path.hasPrefix(RelayAdmin.prefix) {
+            admin(head, path: path, context: context)
             return
         }
         if !isShareHost && path == "/healthz" {
@@ -147,12 +153,9 @@ final class RelayFrontendHandler: ChannelInboundHandler, RemovableChannelHandler
             return
         }
 
-        let bearer = head.value(of: "Authorization").flatMap { value -> String? in
-            guard value.lowercased().hasPrefix("bearer ") else { return nil }
-            return String(value.dropFirst(7)).trimmingCharacters(in: .whitespaces)
-        }
+        let bearer = Self.bearer(head)
         let remote = forwardedClient(head) ?? context.channel.remoteAddress?.ipAddress ?? "?"
-        guard let bearer, let label = config.label(forToken: bearer) else {
+        guard let bearer, let label = tokens.identity(forToken: bearer)?.label else {
             RelayLog.warn("Rejected a tunnel from \(remote): \(bearer == nil ? "no token" : "unknown token").")
             reply(context, RelayPages.rejectedToken())
             return
@@ -176,6 +179,35 @@ final class RelayFrontendHandler: ChannelInboundHandler, RemovableChannelHandler
             RelayLog.error("Couldn't set up a tunnel for \(label): \(error)")
             channel.close(promise: nil)
         }
+    }
+
+    private static func bearer(_ head: HTTPHead) -> String? {
+        head.value(of: "Authorization").flatMap { value -> String? in
+            guard value.lowercased().hasPrefix("bearer ") else { return nil }
+            return String(value.dropFirst(7)).trimmingCharacters(in: .whitespaces)
+        }
+    }
+
+    // MARK: - Admin
+
+    /// Waits for the whole body, then answers. Called again from `channelRead`
+    /// as more of it arrives, since the connection stays in `.reading`.
+    private func admin(_ head: HTTPHead, path: String, context: ChannelHandlerContext) {
+        if head.value(of: "Transfer-Encoding") != nil {
+            reply(context, RelayAdmin.failure("411 Length Required", "no_length", "Send the body with a Content-Length."))
+            return
+        }
+        let length = Int(head.value(of: "Content-Length") ?? "0") ?? -1
+        guard (0...RelayAdmin.maxBody).contains(length) else {
+            reply(context, RelayAdmin.failure("413 Content Too Large", "too_large", "Admin requests are small JSON bodies."))
+            return
+        }
+        guard raw.readableBytes >= head.byteLength + length else { return }
+
+        let body = Data(raw.getBytes(at: raw.readerIndex + head.byteLength, length: length) ?? [])
+        reply(context, RelayAdmin.handle(
+            method: head.method, path: path, bearer: Self.bearer(head), body: body, tokens: tokens, hub: hub
+        ))
     }
 
     private func forwardedClient(_ head: HTTPHead) -> String? {

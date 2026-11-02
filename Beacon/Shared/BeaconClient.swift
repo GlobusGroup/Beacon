@@ -162,6 +162,23 @@ public struct BeaconClient: Sendable {
         try require(BeaconRequest(op: .setRelay, relay: spec)).relay
     }
 
+    // MARK: Relay tokens
+
+    public func relayTokens() throws -> [RelayToken] {
+        try require(BeaconRequest(op: .relayTokens)).relayTokens ?? []
+    }
+
+    public func createRelayToken(_ spec: RelayTokenSpec) throws -> RelayInvite {
+        guard let invite = try require(BeaconRequest(op: .createRelayToken, relayToken: spec)).invite else {
+            throw BeaconClientError(code: "bad_response", message: "The daemon didn't pass on the new token.")
+        }
+        return invite
+    }
+
+    public func revokeRelayToken(label: String) throws {
+        try require(BeaconRequest(op: .revokeRelayToken, name: label))
+    }
+
     /// Asks the daemon to exit; launchd's KeepAlive starts a fresh one.
     /// Needs no password, unlike `launchctl kickstart`.
     public func restart() throws {

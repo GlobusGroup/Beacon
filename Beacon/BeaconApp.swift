@@ -35,6 +35,8 @@ struct BeaconApp: App {
         .defaultPosition(.center)
         .restorationBehavior(.disabled)
         .defaultLaunchBehavior(Self.needsSetupAtLaunch ? .presented : .suppressed)
+        // Opening a .beacon file mustn't bring this window up; AppDelegate takes it.
+        .handlesExternalEvents(matching: [])
 
         Window("Add project", id: WindowID.addProject) {
             AddProjectView()
@@ -45,6 +47,7 @@ struct BeaconApp: App {
         .defaultPosition(.center)
         .restorationBehavior(.disabled)
         .defaultLaunchBehavior(.suppressed)
+        .handlesExternalEvents(matching: [])
 
         Settings {
             SettingsPanel()
@@ -72,6 +75,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let window = notification.object as? NSWindow else { return }
             MainActor.assumeIsolated { AppWindows.windowWillClose(window) }
         }
+    }
+
+    /// A `.beacon` relay invite, double-clicked or dropped on the app.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        let invites = urls.filter { $0.pathExtension.lowercased() == RelayInvite.fileExtension }
+        MainActor.assumeIsolated { InviteInbox.receive(invites) }
     }
 
     /// Clicking the Dock icon while Beacon is a regular app, with its windows

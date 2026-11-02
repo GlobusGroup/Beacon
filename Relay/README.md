@@ -63,12 +63,31 @@ To build the image yourself, from the package root:
 - **Shares are public** unless given `--password`. Anyone with the URL reaches
   the dev server, including its debug pages.
 
+## Admin API
+
+Tokens labelled in `BEACON_ADMINS`, and tokens an admin created with admin
+rights, can manage who uses the relay. Beacon's daemon calls this for the app
+and `beacon relay tokens | invite | revoke`; all on the apex, with
+`Authorization: Bearer <admin token>`:
+
+| Request | |
+| --- | --- |
+| `GET /_admin/tokens` | Every token: label, note, admin, `environment` or `relay`, who made it and when, whether it's connected and what it shares |
+| `POST /_admin/tokens` | `{"label":"sam","note":"Sam's laptop","admin":false}` → 201 with the token in `secret`, shown this once |
+| `DELETE /_admin/tokens/<label>` | Revokes a created token and closes its tunnel. `BEACON_TOKENS` entries can only be removed there |
+
+Created tokens are stored in `$BEACON_DATA_DIR/tokens.json` as SHA-256
+digests, so the file can't be used to connect. Errors are
+`{"error":{"code":"…","message":"…"}}`.
+
 ## Configuration
 
 | Variable | Default | |
 | --- | --- | --- |
 | `BEACON_DOMAIN` | required | The apex, e.g. `relay.example.com` |
 | `BEACON_TOKENS` | required | `label:token` pairs; tokens 16+ characters |
+| `BEACON_ADMINS` | none | Labels from `BEACON_TOKENS` that may manage tokens, comma separated |
+| `BEACON_DATA_DIR` | `/data` | Where tokens created through the admin API are saved |
 | `PORT` | `8080` | Where the relay listens |
 | `BEACON_PUBLIC_SCHEME` | `https` | Scheme visitors use, for URLs and `X-Forwarded-Proto` |
 | `BEACON_PUBLIC_PORT` | `443` | Port visitors use |
@@ -81,8 +100,8 @@ From the package root, with no Traefik and no TLS:
 
 ```bash
 swift build --product beacon-relay
-BEACON_DOMAIN=relay.example.com BEACON_TOKENS=dean:$(openssl rand -hex 24) \
-  BEACON_PUBLIC_SCHEME=http BEACON_PUBLIC_PORT=8090 PORT=8090 \
+BEACON_DOMAIN=relay.example.com BEACON_TOKENS=dean:$(openssl rand -hex 24) BEACON_ADMINS=dean \
+  BEACON_DATA_DIR=/tmp/beacon-relay BEACON_PUBLIC_SCHEME=http BEACON_PUBLIC_PORT=8090 PORT=8090 \
   BEACON_TRUST_FORWARDED_FOR=false .build/debug/beacon-relay
 ```
 

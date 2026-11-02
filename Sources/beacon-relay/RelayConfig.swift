@@ -17,6 +17,11 @@ struct RelayConfig {
     /// Token → label. The label names whoever holds the token and namespaces
     /// their hostnames: `shop` shared with label `dean` is `shop-dean.<domain>`.
     var tokens: [(token: String, label: String)]
+    /// Labels from `tokens` that may create and revoke tokens through the
+    /// relay's admin API.
+    var admins: Set<String>
+    /// Where tokens created through the admin API are kept. A volume in Docker.
+    var dataDir: String
     var verbose: Bool
 
     enum Problem: Error, CustomStringConvertible {
@@ -41,13 +46,18 @@ struct RelayConfig {
             throw Problem.invalid("BEACON_PUBLIC_SCHEME should be https or http, not '\(scheme)'.")
         }
 
+        let tokens = try parseTokens(env["BEACON_TOKENS"] ?? "")
+        let admins = try parseAdmins(env["BEACON_ADMINS"] ?? "", tokens: tokens)
+
         return RelayConfig(
             domain: domain,
             port: Int(env["PORT"] ?? "") ?? 8080,
             publicScheme: scheme,
             publicPort: Int(env["BEACON_PUBLIC_PORT"] ?? "") ?? (scheme == "https" ? 443 : 80),
             trustForwardedFor: (env["BEACON_TRUST_FORWARDED_FOR"] ?? "true").lowercased() != "false",
-            tokens: try parseTokens(env["BEACON_TOKENS"] ?? ""),
+            tokens: tokens,
+            admins: admins,
+            dataDir: (env["BEACON_DATA_DIR"] ?? "").isEmpty ? "/data" : env["BEACON_DATA_DIR"]!,
             verbose: (env["BEACON_VERBOSE"] ?? "").lowercased() == "true"
         )
     }
@@ -83,14 +93,20 @@ struct RelayConfig {
         return out
     }
 
-    /// The label for a presented token, or nil. Every token is checked so the
-    /// time taken doesn't reveal which, if any, came close.
-    func label(forToken presented: String) -> String? {
-        var match: String?
-        for entry in tokens where constantTimeEquals(entry.token, presented) {
-            match = entry.label
+    /// `BEACON_ADMINS=dean,sam`: labels from `BEACON_TOKENS`, comma or
+    /// whitespace separated. Naming the label rather than repeating the token
+    /// keeps each secret in one place.
+    static func parseAdmins(_ raw: String, tokens: [(token: String, label: String)]) throws -> Set<String> {
+        let known = Set(tokens.map(\.label))
+        var admins = Set<String>()
+        for entry in raw.split(whereSeparator: { $0 == "," || $0.isWhitespace }) {
+            let label = entry.lowercased()
+            guard known.contains(label) else {
+                throw Problem.invalid("BEACON_ADMINS names '\(label)', which isn't a label in BEACON_TOKENS.")
+            }
+            admins.insert(label)
         }
-        return match
+        return admins
     }
 }
 

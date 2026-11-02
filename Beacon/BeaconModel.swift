@@ -15,6 +15,32 @@ enum ActionOutcome: Equatable {
 enum SettingsHighlight: Hashable {
     /// The background service row, with its Update button.
     case service
+    /// The relay fields, filled in from a `.beacon` file.
+    case sharing
+}
+
+/// A `.beacon` file the user opened, waiting in Settings → Sharing for Apply.
+struct PendingInvite: Equatable {
+    var invite: RelayInvite
+    var fileName: String
+}
+
+/// `.beacon` files macOS hands the app, held until the model exists to take
+/// them: a double-clicked file can arrive before SwiftUI has built anything.
+@MainActor
+enum InviteInbox {
+    private static var waiting: [URL] = []
+    private static var handler: ((URL) -> Void)?
+
+    static func receive(_ urls: [URL]) {
+        if let handler { urls.forEach(handler) } else { waiting += urls }
+    }
+
+    static func deliver(to handler: @escaping (URL) -> Void) {
+        self.handler = handler
+        waiting.forEach(handler)
+        waiting = []
+    }
 }
 
 /// The things that make macOS ask the user for permission. Each one is
@@ -68,8 +94,15 @@ final class BeaconModel: ObservableObject {
     @Published private(set) var agentsJustAdded: [String] = []
     /// The user closed the menu's coding agent prompt. Settings still offers it.
     @Published private(set) var agentPromptDismissed = false
+    /// Set by opening a `.beacon` file. Settings fills in the relay from it.
+    @Published var pendingInvite: PendingInvite?
+    /// Everyone who can use the relay, when this Mac's token is an admin
+    /// token. Nil when it isn't, or before Settings has asked.
+    @Published private(set) var relayTokens: [RelayToken]?
 
     private let client = BeaconClient()
+    /// A frozen model for previews and snapshots, which mustn't ask the daemon anything.
+    private var isPreview = false
     private var timer: Timer?
     /// Faster than the main poll, and only alive while something is starting.
     private var runTimer: Timer?
@@ -108,6 +141,7 @@ final class BeaconModel: ObservableObject {
 
     init() {
         agentPromptDismissed = UserDefaults.standard.bool(forKey: Self.agentPromptDismissedKey)
+        InviteInbox.deliver { [weak self] url in self?.openInvite(url) }
         Task { await reload() }
         // Cheap enough to poll: a status call and one bind() per project.
         timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
@@ -133,7 +167,9 @@ final class BeaconModel: ObservableObject {
         relay: RelayStatus? = nil,
         settingsHighlight: SettingsHighlight? = nil,
         agents: [AgentInstructions.AgentStatus] = [],
-        agentsJustAdded: [String] = []
+        agentsJustAdded: [String] = [],
+        relayTokens: [RelayToken]? = nil,
+        pendingInvite: PendingInvite? = nil
     ) {
         self.status = previewRunning
             ? DaemonStatus(
@@ -153,6 +189,9 @@ final class BeaconModel: ObservableObject {
         self.settingsHighlight = settingsHighlight
         self.agents = agents
         self.agentsJustAdded = agentsJustAdded
+        self.relayTokens = relayTokens
+        self.pendingInvite = pendingInvite
+        self.isPreview = true
         self.hasLoaded = true
     }
     #endif
@@ -352,6 +391,68 @@ final class BeaconModel: ObservableObject {
         case .success(let status): relay = status
         case .failure(let error): notice = "Couldn't stop sharing \(site.name): \(error.localizedDescription)"
         }
+    }
+
+    // MARK: Relay invites and tokens
+
+    /// Reads a `.beacon` file and opens Settings with the relay filled in.
+    /// Nothing changes until the user presses Apply there.
+    func openInvite(_ url: URL) {
+        do {
+            pendingInvite = PendingInvite(invite: try RelayInvite.read(from: url), fileName: url.lastPathComponent)
+            settingsHighlight = .sharing
+            AppWindows.showSettings()
+        } catch {
+            notice = error.localizedDescription
+        }
+    }
+
+    /// Asks the relay who can use it. Leaves `relayTokens` nil, without
+    /// complaint, when the token isn't an admin one or either end is too old
+    /// to know about tokens. Returns a message for anything else.
+    @discardableResult
+    func loadRelayTokens() async -> String? {
+        guard !isPreview else { return nil }
+        guard relayConfigured else {
+            relayTokens = nil
+            return nil
+        }
+        let client = self.client
+        let result: Result<[RelayToken], Error> = await Task.detached {
+            Result { try client.relayTokens() }
+        }.value
+
+        switch result {
+        case .success(let tokens):
+            relayTokens = tokens
+            return nil
+        case .failure(let error as BeaconClientError)
+            where ["relay_not_admin", "relay_bad_token", "relay_no_admin", "relay_not_configured", "bad_request"].contains(error.code):
+            relayTokens = nil
+            return nil
+        case .failure(let error):
+            return error.localizedDescription
+        }
+    }
+
+    func createRelayToken(_ spec: RelayTokenSpec) async -> Result<RelayInvite, BeaconClientError> {
+        let client = self.client
+        let result: Result<RelayInvite, Error> = await Task.detached {
+            Result { try client.createRelayToken(spec) }
+        }.value
+        await loadRelayTokens()
+        return result.mapError { $0 as? BeaconClientError ?? BeaconClientError(code: "error", message: $0.localizedDescription) }
+    }
+
+    /// Returns a message when the relay refused.
+    func revokeRelayToken(_ label: String) async -> String? {
+        let client = self.client
+        let result: Result<Void, Error> = await Task.detached {
+            Result { try client.revokeRelayToken(label: label) }
+        }.value
+        await loadRelayTokens()
+        if case .failure(let error) = result { return error.localizedDescription }
+        return nil
     }
 
     func openPublic(_ site: Site) {

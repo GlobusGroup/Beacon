@@ -100,6 +100,15 @@ final class TunnelClient: @unchecked Sendable {
         }
     }
 
+    /// For calls to the relay's admin API, with the configured relay and token.
+    func adminClient() throws -> RelayAdminClient {
+        let settings = lock.withLock { self.settings }
+        guard settings.isConfigured, let url = settings.url, let token = settings.token, let target = RelayTarget(url) else {
+            throw BeaconClientError(code: "relay_not_configured", message: "No relay is set up.")
+        }
+        return RelayAdminClient(relay: url, token: token, target: target)
+    }
+
     func share(_ spec: ShareSpec) throws -> RelayStatus {
         guard let site = registry.site(named: spec.name) else {
             throw BeaconClientError(code: "unknown_site", message: "No project named '\(spec.name)'.")

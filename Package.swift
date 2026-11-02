@@ -67,6 +67,7 @@ let package = Package(
                 "BeaconTunnel",
                 .product(name: "NIOCore", package: "swift-nio"),
                 .product(name: "NIOPosix", package: "swift-nio"),
+                .product(name: "Crypto", package: "swift-crypto"),
             ],
             path: "Sources/beacon-relay",
             swiftSettings: [.swiftLanguageMode(.v5)]

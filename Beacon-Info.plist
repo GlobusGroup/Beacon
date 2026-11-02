@@ -2,7 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
   Merged into the Info.plist Xcode generates from the build settings. Only
-  Sparkle's keys live here: build settings can't express them.
+  keys build settings can't express live here: Sparkle's, and the .beacon
+  relay invite file type, which Beacon opens to fill in Settings → Sharing.
   SUPublicEDKey is the output of Sparkle's `generate_keys -p`; release.sh
   refuses to publish if it doesn't match the key in the keychain.
 -->
@@ -14,5 +15,40 @@
     <string>oikVsy9YTK4inQw0VYB1hzowM1qKg+Qf+/D+4Mi5Ry0=</string>
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.globusgroup.beacon.invite</string>
+			<key>UTTypeDescription</key>
+			<string>Beacon Relay Invite</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.json</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>beacon</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Beacon Relay Invite</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.globusgroup.beacon.invite</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

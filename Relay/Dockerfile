@@ -14,7 +14,11 @@ RUN swift build -c release --product beacon-relay --static-swift-stdlib \
  && cp "$(swift build -c release --show-bin-path)/beacon-relay" /beacon-relay
 
 FROM ubuntu:noble
-RUN useradd --system --no-create-home --shell /usr/sbin/nologin beacon
+RUN useradd --system --no-create-home --shell /usr/sbin/nologin beacon \
+ && mkdir /data && chown beacon /data
+# Tokens made through the admin API. A named volume copies this directory's
+# owner, so the relay can write to it without running as root.
+VOLUME /data
 COPY --from=build /beacon-relay /usr/local/bin/beacon-relay
 USER beacon
 EXPOSE 8080

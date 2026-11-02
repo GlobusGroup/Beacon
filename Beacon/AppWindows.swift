@@ -35,6 +35,22 @@ enum AppWindows {
         bringForward(WindowID.settings)
     }
 
+    /// Opens Settings from outside any view, e.g. when macOS hands Beacon a
+    /// file. SwiftUI only gives views `openSettings`, so this goes through the
+    /// app menu's own Settings… item, which does the same thing.
+    static func showSettings() {
+        becomeRegularApp()
+        // At launch the menu may not be built yet.
+        DispatchQueue.main.async {
+            let items = NSApp.mainMenu?.items.compactMap(\.submenu).flatMap(\.items) ?? []
+            if let item = items.first(where: { $0.action == Selector(("showSettingsWindow:")) }),
+               let menu = item.menu {
+                menu.performActionForItem(at: menu.index(of: item))
+            }
+            bringForward(WindowID.settings)
+        }
+    }
+
     /// Brings a window back in front, e.g. once a macOS prompt it triggered
     /// has been answered, so the user sees the result where they left off.
     static func bringForward(_ id: String) {

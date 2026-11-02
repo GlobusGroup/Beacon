@@ -259,6 +259,8 @@ openssl rand -hex 24
 
 Each token is paired with a label, written as `label:token`. The label ends up in that person's links, so if `dean` shares `shop`, it's at `shop-dean.relay.example.com`. Labels can use lowercase letters, numbers and hyphens.
 
+You only need to do this for yourself. List your label in `BEACON_ADMINS` and your token becomes an admin token, which lets you add everyone else from the Beacon app (see [Looking after it](#looking-after-it)).
+
 ### 5. Add the compose file and environment
 
 In your control panel, create a new stack using [`Relay/docker-compose.yml`](Relay/docker-compose.yml) as it is. Then give it a `.env` like this one, changed to match your setup:
@@ -266,7 +268,8 @@ In your control panel, create a new stack using [`Relay/docker-compose.yml`](Rel
 ```bash
 IMAGE_TAG=main                   # or a release, such as 1.2.0
 BEACON_DOMAIN=relay.example.com
-BEACON_TOKENS=dean:3f9c…,sam:81aa…
+BEACON_TOKENS=dean:3f9c…
+BEACON_ADMINS=dean
 
 TRAEFIK_NETWORK=traefik          # the Docker network Traefik watches
 TRAEFIK_ENTRYPOINT=websecure     # your HTTPS entrypoint
@@ -275,7 +278,7 @@ TRAEFIK_CERTRESOLVER=cloudflare  # the resolver from step 3
 
 You don't need to open any ports for the relay. Traefik talks to it over the Docker network, and the labels in the compose file ask Traefik for a certificate covering `relay.example.com` and `*.relay.example.com`. If you want to see every available setting, [`Relay/.env.example`](Relay/.env.example) has them all with comments.
 
-Now deploy the stack. The relay doesn't store anything, so you can redeploy it whenever you like. Anyone sharing will just reconnect a few seconds later.
+Now deploy the stack. The only thing the relay stores is the tokens admins create, in the `relay-data` volume, so you can redeploy it whenever you like. Anyone sharing will just reconnect a few seconds later.
 
 ### 6. Check it's running
 
@@ -287,7 +290,7 @@ You should get back `{"ok":true}`. If you don't, check the relay's logs in your 
 
 ### 7. Connect each Mac
 
-Send each person their token. They can either enter the relay address and token in **Settings → Sharing**, or run:
+Send each person a `.beacon` file (see below), or their token. Opening the file in Beacon fills in **Settings → Sharing**; they press **Apply**. With a plain token, they can enter the relay address and token there themselves, or run:
 
 ```bash
 beacon relay --url relay.example.com --token <their token>
@@ -298,7 +301,9 @@ Once Settings shows the tunnel as connected, the project should be live at `http
 
 ### Looking after it
 
-To add someone, add their `label:token` to `BEACON_TOKENS` and redeploy. To remove someone, take their entry out and redeploy, and their Mac won't be able to connect again.
+With an admin token, **Settings → Relay access → Manage…** lists everyone who can use the relay, whether they're connected and what they're sharing. **New token…** makes a token for someone and saves it as a `.beacon` file holding the relay address and the token: send them that file. The token isn't shown again, so save the file before closing the sheet. **Revoke** takes a token away and closes that person's tunnel at once. From a terminal, `beacon relay invite sam --note "Sam's laptop"`, `beacon relay tokens` and `beacon relay revoke sam` do the same.
+
+Tokens made this way are kept on the relay, in its `relay-data` volume. Tokens in `BEACON_TOKENS` show up in the list too, but can only be added or removed by editing `BEACON_TOKENS` and redeploying.
 
 If `IMAGE_TAG` is `main`, pulling and redeploying gets you the latest relay. If you'd rather decide when to update, set it to a release number instead.
 

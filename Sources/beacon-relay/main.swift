@@ -12,8 +12,10 @@ import NIOPosix
 setvbuf(stdout, nil, _IOLBF, 0)
 
 let config: RelayConfig
+let tokens: RelayTokens
 do {
     config = try RelayConfig.fromEnvironment()
+    tokens = try RelayTokens(config: config)
 } catch {
     FileHandle.standardError.write(Data("beacon-relay: \(error)\n".utf8))
     exit(2)
@@ -30,13 +32,13 @@ let server = try ServerBootstrap(group: group)
     .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
     .childChannelOption(ChannelOptions.tcpOption(.tcp_nodelay), value: 1)
     .childChannelInitializer { channel in
-        channel.pipeline.addHandler(RelayFrontendHandler(hub: hub, config: config))
+        channel.pipeline.addHandler(RelayFrontendHandler(hub: hub, config: config, tokens: tokens))
     }
     .bind(host: "0.0.0.0", port: config.port)
     .wait()
 
-let labels = config.tokens.map(\.label).joined(separator: ", ")
-RelayLog.info("beacon-relay listening on :\(config.port) for \(config.domain) (\(config.publicScheme)). Tokens: \(labels).")
+let labels = config.tokens.map { config.admins.contains($0.label) ? "\($0.label) (admin)" : $0.label }.joined(separator: ", ")
+RelayLog.info("beacon-relay listening on :\(config.port) for \(config.domain) (\(config.publicScheme)). Tokens: \(labels), plus \(tokens.count - config.tokens.count) created in \(config.dataDir).")
 
 let termination = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
 termination.setEventHandler {

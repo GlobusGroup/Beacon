@@ -35,6 +35,10 @@ enum RelayPages {
         response("200 OK", contentType: "application/json", body: #"{"ok":true,"tunnels":\#(sessions),"shares":\#(routes)}"#)
     }
 
+    static func json(_ status: String, _ body: String) -> String {
+        response(status, contentType: "application/json", body: body)
+    }
+
     // MARK: -
 
     private static func plain(_ status: String, _ body: String) -> String {
