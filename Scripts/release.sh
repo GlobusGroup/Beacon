@@ -166,8 +166,12 @@ done
 SPARKLE_FW="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
 for helper in Autoupdate Updater.app XPCServices/Downloader.xpc XPCServices/Installer.xpc; do
   [ -e "$SPARKLE_FW/$helper" ] || continue
-  codesign -dvv "$SPARKLE_FW/$helper" 2>&1 | grep -q "Authority=Developer ID Application" || {
-    echo "Sparkle's $helper isn't Developer ID signed." >&2; exit 1; }
+  # Captured first: with pipefail, grep -q closing the pipe early fails it.
+  info=$(codesign -dvv "$SPARKLE_FW/$helper" 2>&1)
+  grep -q "Authority=Developer ID Application" <<<"$info" || {
+    echo "Sparkle's $helper isn't Developer ID signed:" >&2
+    echo "$info" >&2
+    exit 1; }
 done
 
 step "Build DMG"
@@ -240,8 +244,8 @@ gh release create "$TAG" "$BUILD_DIR/Beacon.dmg" "$BUILD_DIR/appcast.xml" \
 step "Check the update feed"
 # What installed copies read. Fails while the repo is private, since Sparkle
 # can't sign in to GitHub.
-curl -fsSL "https://github.com/$REPO/releases/latest/download/appcast.xml" \
-  | grep -q "<sparkle:shortVersionString>$VERSION<" || {
+FEED=$(curl -fsSL "https://github.com/$REPO/releases/latest/download/appcast.xml" || true)
+grep -q "<sparkle:shortVersionString>$VERSION<" <<<"$FEED" || {
   echo "The release is up, but releases/latest/download/appcast.xml doesn't serve $VERSION publicly." >&2
   exit 1; }
 
