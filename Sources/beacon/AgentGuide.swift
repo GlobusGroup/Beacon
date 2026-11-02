@@ -111,6 +111,19 @@ extension BeaconCLI {
             beacon list            # every project, and which are running
             ```
 
+            To put the project on a public URL, only when the user asks for it:
+
+            ```sh
+            beacon share --json        # → "publicURL": "https://myproject-<label>.<relay domain>"
+            beacon share --password '…' --json
+            beacon unshare             # when they're done; sharing persists until then
+            ```
+
+            It needs a relay set up first (`beacon relay` shows it). If none is, ask
+            the user to run `beacon relay --url <domain> --token <token>` themselves,
+            and don't guess either value. The dev server must accept the relay's
+            domain as a Host (Vite: `server.allowedHosts`).
+
             If `beacon` is not installed, say so and stop — do not fall back to a
             random port.
             <!-- beacon:end -->
