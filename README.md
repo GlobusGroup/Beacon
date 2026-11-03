@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/GlobusGroup/Beacon/releases/latest/download/Beacon.dmg"><img src="docs/images/download.png" alt="Download Beacon for macOS" width="210"></a>
   <br>
-  <sub>Requires macOS 26 or later</sub>
+  <sub>Requires macOS 15 or later</sub>
 </p>
 
 <p align="center">
