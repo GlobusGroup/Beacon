@@ -152,6 +152,18 @@ Other websites can't start your projects. The start request needs a custom heade
 
 Anything under a project's domain goes to that project, so `admin.shop.test` reaches `shop` without registering it. Beacon's DNS answers for every name under the domain, and the certificate has a wildcard to match. You only need `--alias` when a completely different domain should point at the same project.
 
+### Calling a project from Docker containers
+
+Inside a container, `shop.test` resolves to the container itself, and the container doesn't trust Beacon's certificate. For a Docker Compose project, run this in the project directory:
+
+```bash
+beacon docker init
+```
+
+It writes `compose.override.yaml`, which Compose loads on its own. The override adds a small `beacon` sidecar that answers for the project's domains on the compose network and forwards to Beacon on your Mac, plus a CA bundle every service trusts. After `docker compose up`, the services can call `https://shop.test` without `-k`. There's no change to Docker's settings, and it works on Docker Desktop, OrbStack and Colima.
+
+Subdomains the containers call have to be listed with `--domain api.shop.test`, because Docker's network aliases can't be wildcards. [Sidecar/README.md](Sidecar/README.md) has the rest.
+
 ### Telling your coding agent
 
 Once Beacon is set up, the menu offers to add a short note to Claude Code and Codex. It tells them to get the port from Beacon rather than picking one, and to give you the `.test` URL instead of a `localhost` one. If you close the prompt, you can still add it later under **Settings → Coding agents**.
@@ -316,7 +328,7 @@ Behind the app there's a single background service, `beacond`, that runs as root
 | Piece | What it does |
 | --- | --- |
 | DNS responder | Listens on `127.0.0.1:53535`. `/etc/resolver/<tld>` points macOS at it, and it answers every name under a managed TLD with `127.0.0.1`. |
-| Reverse proxy | Listens on ports 80 and 443. It reads the `Host` of each request, finds the project and passes the request on to `127.0.0.1:<port>`. |
+| Reverse proxy | Listens on ports 80 and 443. It reads the `Host` of each request, finds the project and passes the request on to `127.0.0.1:<port>`. It also serves the root certificate's public half at `/__beacon/ca.pem` on any host, for the Docker sidecar. |
 | Certificate authority | A local root certificate that your login keychain trusts, plus one certificate covering every registered domain. Beacon reissues that certificate whenever the list of domains changes. |
 | Registry | `/Library/Application Support/Beacon/sites.json`, saved on every change. |
 | Control socket | `/var/run/beacon.sock`, owned by the `staff` group, which is why the CLI and the app work without `sudo`. |
@@ -369,6 +381,7 @@ Sources/beacon/          the CLI
 Sources/BeaconTunnel/    tunnel wire format and HTTP head handling, shared with the relay
 Sources/beacon-relay/    the public relay server (Linux)
 Relay/                   Dockerfile, compose file and reference for the relay
+Sidecar/                 the container image `beacon docker init` adds to compose projects
 Beacon/                  the menu bar app (Xcode target)
 Beacon/Shared/           models and IPC, compiled into both the app and the package
 Beacon.xcodeproj         the app

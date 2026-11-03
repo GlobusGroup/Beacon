@@ -112,6 +112,11 @@ final class ProxyFrontendHandler: ChannelInboundHandler {
         case .resolving:
             enqueue(&produced, allocator: context.channel.allocator)
             guard let host = rewriter.host else { return }
+            if let head = rewriter.firstHead, BeaconEndpoint.handleAnyHost(head, on: context.channel) {
+                state = .closed
+                queued = nil
+                return
+            }
             guard let site = routes.site(forHost: host) else {
                 state = .closed
                 ProxyResponder.sendUnknownHost(

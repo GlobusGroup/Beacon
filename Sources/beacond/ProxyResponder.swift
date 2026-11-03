@@ -31,7 +31,7 @@ enum ProxyResponder {
         return httpResponse(status: status, contentType: "text/html; charset=utf-8", body: Array(body.utf8))
     }
 
-    private static func write(on channel: Channel, status: String, contentType: String, body bytes: [UInt8]) {
+    static func write(on channel: Channel, status: String, contentType: String, body bytes: [UInt8]) {
         let response = httpResponse(status: status, contentType: contentType, body: bytes)
         var buffer = channel.allocator.buffer(capacity: response.count)
         buffer.writeBytes(response)

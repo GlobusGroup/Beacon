@@ -11,8 +11,28 @@ import NIOCore
 enum BeaconEndpoint {
     static let prefix = "/__beacon/"
 
+    /// Beacon's root certificate, answered on any Host. The Docker sidecar
+    /// fetches it from `host.docker.internal`, which is no project's domain.
+    /// It's the public half, so handing it to anyone who asks gives nothing away.
+    static let caPath = prefix + "ca.pem"
+
+    /// Handles the URLs that don't belong to a project. Returns false when the
+    /// request is for something else.
+    static func handleAnyHost(_ head: HTTPHead, on channel: Channel) -> Bool {
+        guard head.method == "GET", path(of: head) == caPath else { return false }
+        guard let pem = FileManager.default.contents(atPath: BeaconPaths.caCertFile) else {
+            ProxyResponder.sendJSON(
+                on: channel, status: "503 Service Unavailable",
+                BeaconResponse.failure("no_ca", "Beacon hasn't created its certificate authority yet.")
+            )
+            return true
+        }
+        ProxyResponder.write(on: channel, status: "200 OK", contentType: "application/x-pem-file", body: Array(pem))
+        return true
+    }
+
     static func handle(_ head: HTTPHead, site: Site, runner: ProjectRunner, on channel: Channel) {
-        let path = head.target.split(separator: "?").first.map(String.init) ?? head.target
+        let path = path(of: head)
 
         switch (head.method, path) {
         case ("GET", prefix + "status"):
@@ -50,5 +70,9 @@ enum BeaconEndpoint {
                 BeaconResponse.failure("not_found", "Beacon has nothing at \(path).")
             )
         }
+    }
+
+    private static func path(of head: HTTPHead) -> String {
+        head.target.split(separator: "?").first.map(String.init) ?? head.target
     }
 }

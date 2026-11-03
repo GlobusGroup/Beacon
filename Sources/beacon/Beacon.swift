@@ -15,7 +15,7 @@ struct BeaconCLI: ParsableCommand {
         version: BeaconPaths.version,
         subcommands: [
             Register.self, List.self, Info.self, Port.self, URLCommand.self,
-            Unregister.self, Open.self, Start.self, Stop.self, Logs.self, Share.self, Unshare.self, Relay.self,
+            Unregister.self, Open.self, Start.self, Stop.self, Logs.self, Share.self, Unshare.self, Relay.self, Docker.self,
             Status.self, Config.self,
             Install.self, Uninstall.self, Restart.self, Trust.self, AgentGuide.self,
         ],

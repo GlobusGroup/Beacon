@@ -160,6 +160,13 @@ public enum AgentInstructions {
         and don't guess either value. The dev server must accept the relay's
         domain as a Host (Vite: `server.allowedHosts`).
 
+        Inside Docker containers the domain resolves to the container itself, so
+        a containerised service can't call it out of the box. For a Docker
+        Compose project, run `beacon docker init --json` from the project root:
+        it writes an override file that adds Beacon's sidecar, and the services
+        can then call `url` with normal certificate checks. Never work around
+        it with `-k`, `verify=False` or `NODE_TLS_REJECT_UNAUTHORIZED=0`.
+
         If `beacon` is not installed, say so and stop — do not fall back to a
         random port.
         \(endMarker)
