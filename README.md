@@ -74,7 +74,7 @@ That's the last password prompt you'll see in normal use. Adding projects, chang
 
 Beacon checks GitHub for new versions and asks before installing one. Sometimes an update also includes a newer background service. When that happens, the menu shows a card, and Settings has an Update button that asks for your password once.
 
-To uninstall, use **Settings → Uninstall Beacon…**, or run this in a terminal:
+To uninstall, use **Settings → Service → Uninstall…**, or run this in a terminal:
 
 ```bash
 beacon uninstall          # add --purge to also forget your projects
@@ -301,7 +301,7 @@ Once Settings shows the tunnel as connected, the project should be live at `http
 
 ### Looking after it
 
-With an admin token, **Settings → Relay access → Manage…** lists everyone who can use the relay, whether they're connected and what they're sharing. **New token…** makes a token for someone and saves it as a `.beacon` file holding the relay address and the token: send them that file. The token isn't shown again, so save the file before closing the sheet. **Revoke** takes a token away and closes that person's tunnel at once. From a terminal, `beacon relay invite sam --note "Sam's laptop"`, `beacon relay tokens` and `beacon relay revoke sam` do the same.
+With an admin token, **Settings → Relay access** lists everyone who can use the relay, whether they're connected and what they're sharing. **New token…** makes a token for someone and saves it as a `.beacon` file holding the relay address and the token: send them that file. The token isn't shown again, so save the file before leaving that screen. **Revoke** takes a token away and closes that person's tunnel at once. From a terminal, `beacon relay invite sam --note "Sam's laptop"`, `beacon relay tokens` and `beacon relay revoke sam` do the same.
 
 Tokens made this way are kept on the relay, in its `relay-data` volume. Tokens in `BEACON_TOKENS` show up in the list too, but can only be added or removed by editing `BEACON_TOKENS` and redeploying.
 

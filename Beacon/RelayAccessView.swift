@@ -28,10 +28,9 @@ struct InviteDocument: FileDocument {
 }
 
 /// Everyone who can use the relay, for an admin: make tokens, hand them out
-/// as `.beacon` files, revoke them.
+/// as `.beacon` files, revoke them. The Relay access pane in Settings.
 struct RelayAccessView: View {
     @EnvironmentObject private var model: BeaconModel
-    @Environment(\.dismiss) private var dismiss
 
     private enum Mode {
         case list
@@ -63,9 +62,10 @@ struct RelayAccessView: View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Relay access").font(.beaconHeading)
-                Text(model.relay?.url ?? "")
-                    .font(.beaconMono)
+                Text("Manage tokens on \(model.relay?.url ?? "the relay"). Users set in the relay's .env can't be managed here.")
+                    .font(.beaconLabel)
                     .foregroundStyle(Color.beaconSecondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             switch mode {
@@ -82,7 +82,7 @@ struct RelayAccessView: View {
             }
         }
         .padding(20)
-        .frame(width: 520)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .task { error = await model.loadRelayTokens() }
     }
 
@@ -94,7 +94,7 @@ struct RelayAccessView: View {
                 row(token)
             }
             .listStyle(.bordered(alternatesRowBackgrounds: true))
-            .frame(height: 280)
+            .frame(maxHeight: .infinity)
 
             HStack {
                 Button {
@@ -108,9 +108,10 @@ struct RelayAccessView: View {
                 }
                 .help("Refresh")
                 .disabled(working)
+                Text(summary)
+                    .font(.beaconLabel)
+                    .foregroundStyle(Color.beaconSecondaryText)
                 Spacer()
-                Button("Done") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
                 Button("New token…") {
                     label = ""
                     note = ""
@@ -134,6 +135,11 @@ struct RelayAccessView: View {
         }
     }
 
+    private var summary: String {
+        let tokens = model.relayTokens ?? []
+        return "\(tokens.count) token\(tokens.count == 1 ? "" : "s") · \(tokens.filter(\.connected).count) connected"
+    }
+
     private func row(_ token: RelayToken) -> some View {
         HStack(alignment: .center, spacing: 10) {
             Circle()
@@ -153,7 +159,7 @@ struct RelayAccessView: View {
             }
             Spacer()
             if token.source == .environment {
-                Text("Set on server")
+                Text("Via .env")
                     .font(.beaconCaption)
                     .foregroundStyle(Color.beaconSecondaryText)
                     .help("This token is in the relay's BEACON_TOKENS. Remove it there and redeploy to revoke it.")
@@ -253,7 +259,7 @@ struct RelayAccessView: View {
                     .font(.system(size: 18))
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Made a token for \(invite.label)").font(.beaconBodyEmphasis)
-                    Text("Send them the .beacon file. Opening it in Beacon fills in their relay settings. The token is only in that file and can't be shown again, so save it before you close this.")
+                    Text("Send them the .beacon file. Opening it in Beacon fills in their relay settings. The token is only in that file and can't be shown again, so save it before you press Done.")
                         .font(.beaconLabel)
                         .foregroundStyle(Color.beaconSecondaryText)
                         .fixedSize(horizontal: false, vertical: true)

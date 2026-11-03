@@ -1,6 +1,44 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// The sidebar entries in Settings.
+enum SettingsPane: String, CaseIterable, Identifiable {
+    case general, sharing, access, agents, service, updates
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .general: "General"
+        case .sharing: "Sharing"
+        case .access: "Relay access"
+        case .agents: "Coding agents"
+        case .service: "Service"
+        case .updates: "Updates"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .general: "globe"
+        case .sharing: "antenna.radiowaves.left.and.right"
+        case .access: "person.2"
+        case .agents: "sparkles"
+        case .service: "gearshape.2"
+        case .updates: "arrow.down.circle"
+        }
+    }
+}
+
+extension SettingsHighlight {
+    var pane: SettingsPane {
+        switch self {
+        case .service: .service
+        case .sharing: .sharing
+        }
+    }
+}
+
 struct SettingsPanel: View {
     @EnvironmentObject private var model: BeaconModel
     @ObservedObject private var updater = AppUpdater.shared
@@ -18,35 +56,48 @@ struct SettingsPanel: View {
     @State private var relayLoaded = false
     @State private var relayError: String?
     @State private var importingInvite = false
-    @State private var managingTokens = false
+
+    @State private var pane: SettingsPane? = .general
 
     @State private var explaining: PrivilegedAction?
     @State private var outcome: (action: PrivilegedAction, result: ActionOutcome)?
 
-    var body: some View {
-        ScrollViewReader { proxy in
-            form
-                .onChange(of: model.settingsHighlight, initial: true) { _, target in
-                    reveal(target, with: proxy)
-                }
-        }
+    init() {}
+
+    #if DEBUG
+    /// Opens on a given pane, for snapshots.
+    init(pane: SettingsPane) {
+        _pane = State(initialValue: pane)
+    }
+    #endif
+
+    /// Relay access only appears for an admin token.
+    private var panes: [SettingsPane] {
+        SettingsPane.allCases.filter { $0 != .access || model.relayTokens != nil }
     }
 
-    private var form: some View {
-        Form {
-            routingSection
-            sharingSection
-            if model.relayTokens != nil { relayAccessSection }
-            agentsSection
-            serviceSection
-            updatesSection
-            uninstallSection
+    private var current: SettingsPane {
+        guard let pane, panes.contains(pane) else { return .general }
+        return pane
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            sidebar
+            Divider()
+            ScrollViewReader { proxy in
+                detail
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .onChange(of: model.settingsHighlight, initial: true) { _, target in
+                        reveal(target, with: proxy)
+                    }
+            }
         }
-        .formStyle(.grouped)
-        .frame(width: 500)
-        .fixedSize(horizontal: false, vertical: true)
+        .frame(width: 720, height: 520)
+        .navigationTitle(current.title)
         .onAppear {
             load()
+            loadRelay()
             AppWindows.becomeRegularApp()
         }
         .onChange(of: model.config) { _, _ in if !isDirty { load(force: true) } }
@@ -61,6 +112,81 @@ struct SettingsPanel: View {
         .task { await model.loadRelayTokens() }
         .sheet(item: $explaining) { action in
             PermissionExplainer(action: action) { purge in run(action, purge: purge) }
+        }
+        .fileImporter(isPresented: $importingInvite, allowedContentTypes: [.beaconInvite]) { result in
+            if case .success(let url) = result { model.openInvite(url) }
+        }
+    }
+
+    // MARK: - Layout
+
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(panes) { pane in
+                Button { self.pane = pane } label: { sidebarRow(pane) }
+                    .buttonStyle(.plain)
+            }
+            Spacer()
+        }
+        .padding(10)
+        .frame(width: 190)
+        .frame(maxHeight: .infinity)
+        .background(Color.beaconHairline.opacity(0.35))
+    }
+
+    private func sidebarRow(_ pane: SettingsPane) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: pane.symbol)
+                .frame(width: 18)
+                .foregroundStyle(Color.beaconSecondaryText)
+            Text(pane.title)
+                .font(.beaconBody)
+                .foregroundStyle(Color.beaconText)
+            Spacer()
+            if needsAttention(pane) {
+                Circle().fill(Color.beaconSignal).frame(width: 7, height: 7)
+                    .accessibilityLabel("Needs attention")
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(current == pane ? Color.beaconSelection : Color.clear)
+        )
+        .contentShape(Rectangle())
+        .accessibilityAddTraits(current == pane ? .isSelected : [])
+    }
+
+    @ViewBuilder
+    private var detail: some View {
+        switch current {
+        case .access:
+            RelayAccessView()
+                .environmentObject(model)
+        default:
+            Form {
+                switch current {
+                case .general: routingSection
+                case .sharing: sharingSection
+                case .agents: agentsSection
+                case .service:
+                    serviceSection
+                    uninstallSection
+                case .updates: updatesSection
+                case .access: EmptyView()
+                }
+            }
+            .formStyle(.grouped)
+        }
+    }
+
+    /// Marks a pane in the sidebar when something in it wants doing.
+    private func needsAttention(_ pane: SettingsPane) -> Bool {
+        switch pane {
+        case .service: model.serviceOutdated || (model.isRunning && !model.caTrusted)
+        case .sharing: model.relay?.state == .failed || model.pendingInvite != nil
+        default: false
         }
     }
 
@@ -98,7 +224,7 @@ struct SettingsPanel: View {
                         .font(.beaconLabel)
                         .foregroundStyle(.red)
                 } else {
-                    Text("Space-separated TLDs, without the dot. Existing projects keep their ports.")
+                    Text("TLDs are space-separated with the dot omitted.")
                         .font(.beaconLabel)
                         .foregroundStyle(Color.beaconSecondaryText)
                 }
@@ -117,12 +243,12 @@ struct SettingsPanel: View {
     private var sharingSection: some View {
         Section {
             if model.isRunning && !model.daemonSupportsSharing {
-                Text("The background service is older than this app and can't share projects. Update it under Service, below.")
+                Text("The background service is older than this app and can't share projects. Update it in Service.")
                     .font(.beaconLabel)
                     .foregroundStyle(Color.beaconSecondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                LabeledContent("Relay") {
+                LabeledContent("Address") {
                     TextField("", text: $relayURL, prompt: Text("relay.example.com"))
                         .font(.beaconMono)
                         .multilineTextAlignment(.trailing)
@@ -175,38 +301,7 @@ struct SettingsPanel: View {
                 }
             }
         } header: {
-            Text("Sharing")
-        }
-        .onAppear { loadRelay() }
-        .fileImporter(isPresented: $importingInvite, allowedContentTypes: [.beaconInvite]) { result in
-            if case .success(let url) = result { model.openInvite(url) }
-        }
-    }
-
-    // MARK: - Relay access
-
-    private var relayAccessSection: some View {
-        Section {
-            let tokens = model.relayTokens ?? []
-            LabeledContent("People") {
-                Text("\(tokens.count) token\(tokens.count == 1 ? "" : "s") · \(tokens.filter(\.connected).count) connected")
-                    .font(.beaconLabel)
-            }
-            HStack {
-                Text("Your token is an admin token, so you can let others use this relay.")
-                    .font(.beaconLabel)
-                    .foregroundStyle(Color.beaconSecondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer()
-                Button("Manage…") { managingTokens = true }
-                    .buttonStyle(.signalCompact)
-            }
-        } header: {
-            Text("Relay access")
-        }
-        .sheet(isPresented: $managingTokens) {
-            RelayAccessView()
-                .environmentObject(model)
+            Text("Relay")
         }
     }
 
@@ -442,9 +537,11 @@ struct SettingsPanel: View {
             .opacity(model.settingsHighlight == target ? 1 : 0)
     }
 
-    /// Scrolls to the row, then lets the tint fade once the user has seen it.
+    /// Switches to the row's pane and scrolls to it, then lets the tint fade
+    /// once the user has seen it.
     private func reveal(_ target: SettingsHighlight?, with proxy: ScrollViewProxy) {
         guard let target else { return }
+        pane = target.pane
         // The window may still be appearing; scroll once it has laid out.
         DispatchQueue.main.async {
             withAnimation(.easeInOut(duration: 0.3)) { proxy.scrollTo(target, anchor: .center) }

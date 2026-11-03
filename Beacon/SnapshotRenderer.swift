@@ -124,18 +124,17 @@ enum SnapshotRenderer {
         )
 
         var shots: [(String, AnyView, BeaconModel)] = [
-            ("settings-relay-admin", AnyView(SettingsPanel()), relayAdmin),
+            ("settings-relay-admin", AnyView(SettingsPanel(pane: .access)), relayAdmin),
             ("settings-invite-opened", AnyView(SettingsPanel()), inviteOpened),
-            ("relay-access-list", AnyView(RelayAccessView()), relayAdmin),
             ("relay-access-created", AnyView(RelayAccessView(
                 justCreated: RelayInvite(relay: "relay.example.com", token: "x", label: "casey")
-            )), relayAdmin),
+            ).frame(width: 530, height: 520)), relayAdmin),
             ("menu-9-sharing", AnyView(MenuPanel()), sharing),
             ("menu-10-share-form", AnyView(
                 ProjectRow(site: projects[1], askingToShare: true).frame(width: 380).padding(.vertical, 6)
             ), sharing),
-            ("settings-sharing", AnyView(SettingsPanel()), sharing),
-            ("settings-relay-failed", AnyView(SettingsPanel()), relayFailed),
+            ("settings-sharing", AnyView(SettingsPanel(pane: .sharing)), sharing),
+            ("settings-relay-failed", AnyView(SettingsPanel(pane: .sharing)), relayFailed),
             ("menu-6-starting", AnyView(MenuPanel()), running),
             ("menu-7-failed", AnyView(MenuPanel()), failed),
             ("menu-8-confirm-remove", AnyView(
@@ -152,13 +151,14 @@ enum SnapshotRenderer {
             ("setup-4-done", AnyView(SetupView()), ready),
             ("add-project", AnyView(AddProjectView()), ready),
             ("settings-installed", AnyView(SettingsPanel()), installed),
-            ("settings-not-installed", AnyView(SettingsPanel()), fresh),
+            ("settings-not-installed", AnyView(SettingsPanel(pane: .service)), fresh),
             ("menu-10-service-outdated", AnyView(MenuPanel()), outdated),
-            ("settings-service-outdated", AnyView(SettingsPanel()), outdated),
+            ("settings-service-outdated", AnyView(SettingsPanel(pane: .service)), outdated),
             ("settings-service-highlighted", AnyView(SettingsPanel()), outdatedFromMenu),
             ("menu-11-agent-prompt", AnyView(MenuPanel()), agentPrompt),
             ("menu-12-agent-prompt-done", AnyView(MenuPanel()), agentPromptDone),
-            ("settings-agents", AnyView(SettingsPanel()), agentsMixed),
+            ("settings-agents", AnyView(SettingsPanel(pane: .agents)), agentsMixed),
+            ("settings-updates", AnyView(SettingsPanel(pane: .updates)), ready),
         ]
         for action in [PrivilegedAction.install, .update, .trust, .uninstall] {
             shots.append(("explainer-\(action.rawValue)", AnyView(PermissionExplainer(action: action) { _ in }), ready))
