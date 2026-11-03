@@ -5,7 +5,8 @@ import Foundation
 /// URL, plus the files agents read them from.
 ///
 /// Shared by `beacon agent-guide` and the menu bar app's prompt, so both write
-/// exactly the same block, between markers that make writing it idempotent.
+/// exactly the same block, between markers that make writing it idempotent
+/// and let a newer Beacon replace a block an older one wrote.
 public enum AgentInstructions {
     public static let startMarker = "<!-- beacon:start -->"
     public static let endMarker = "<!-- beacon:end -->"
@@ -25,6 +26,8 @@ public enum AgentInstructions {
         }
 
         public var hasInstructions: Bool { AgentInstructions.isPresent(in: file) }
+
+        public func isCurrent(tld: String) -> Bool { AgentInstructions.isCurrent(in: file, tld: tld) }
     }
 
     /// Where an installed agent stands, for showing in the app.
@@ -32,11 +35,16 @@ public enum AgentInstructions {
         public let name: String
         public let file: String
         public let hasInstructions: Bool
+        /// False when the file has an older Beacon's instructions.
+        public let isCurrent: Bool
 
-        public init(name: String, file: String, hasInstructions: Bool) {
+        public var isOutdated: Bool { hasInstructions && !isCurrent }
+
+        public init(name: String, file: String, hasInstructions: Bool, isCurrent: Bool = true) {
             self.name = name
             self.file = file
             self.hasInstructions = hasInstructions
+            self.isCurrent = isCurrent
         }
     }
 
@@ -56,9 +64,12 @@ public enum AgentInstructions {
     }
 
     /// The installed agents and whether each already has the instructions.
-    public static func installedAgents() -> [AgentStatus] {
+    public static func installedAgents(tld: String) -> [AgentStatus] {
         globalAgents().filter(\.isInstalled).map {
-            AgentStatus(name: $0.name, file: $0.file, hasInstructions: $0.hasInstructions)
+            AgentStatus(
+                name: $0.name, file: $0.file,
+                hasInstructions: $0.hasInstructions, isCurrent: $0.isCurrent(tld: tld)
+            )
         }
     }
 
@@ -66,21 +77,51 @@ public enum AgentInstructions {
         ((try? String(contentsOfFile: file, encoding: .utf8)) ?? "").contains(startMarker)
     }
 
+    /// Whether the file's block is exactly what this Beacon would write.
+    public static func isCurrent(in file: String, tld: String) -> Bool {
+        let existing = (try? String(contentsOfFile: file, encoding: .utf8)) ?? ""
+        return block(in: existing).map { String(existing[$0]) == text(tld: tld) } ?? false
+    }
+
     public enum WriteResult: Sendable {
         case added
+        /// An older Beacon's block was replaced with this one's.
+        case updated
         case alreadyPresent
     }
 
-    /// Appends the instructions to `file`, creating it if needed. Leaves the
-    /// file alone if it already has them.
+    /// Writes the instructions to `file`, creating it if needed. A block an
+    /// older Beacon wrote is replaced in place; the rest of the file is left
+    /// exactly as it was.
     @discardableResult
-    public static func append(to file: String, tld: String) throws -> WriteResult {
+    public static func write(to file: String, tld: String) throws -> WriteResult {
         var existing = (try? String(contentsOfFile: file, encoding: .utf8)) ?? ""
-        if existing.contains(startMarker) { return .alreadyPresent }
+        let current = text(tld: tld)
+
+        if existing.contains(startMarker) {
+            // A start marker with no end marker has been edited by hand, and
+            // there's no telling where Beacon's part stops. Leave it alone.
+            guard let range = block(in: existing), String(existing[range]) != current else {
+                return .alreadyPresent
+            }
+            existing.replaceSubrange(range, with: current)
+            try existing.write(toFile: file, atomically: true, encoding: .utf8)
+            return .updated
+        }
+
         if !existing.isEmpty && !existing.hasSuffix("\n") { existing += "\n" }
         if !existing.isEmpty { existing += "\n" }
-        try (existing + text(tld: tld) + "\n").write(toFile: file, atomically: true, encoding: .utf8)
+        try (existing + current + "\n").write(toFile: file, atomically: true, encoding: .utf8)
         return .added
+    }
+
+    /// The first block, from the start of its start marker to the end of its
+    /// end marker.
+    private static func block(in text: String) -> Range<String.Index>? {
+        guard let start = text.range(of: startMarker),
+              let end = text.range(of: endMarker, range: start.upperBound..<text.endIndex)
+        else { return nil }
+        return start.lowerBound..<end.upperBound
     }
 
     public static func text(tld example: String) -> String {

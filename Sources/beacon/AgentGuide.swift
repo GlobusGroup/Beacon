@@ -16,7 +16,8 @@ extension BeaconCLI {
             current directory, creating it if needed. With --global, appends \
             them to Claude Code's and Codex's user-wide files instead \
             (~/.claude/CLAUDE.md and ~/.codex/AGENTS.md), so every project \
-            gets them.
+            gets them. Instructions an older Beacon wrote are replaced with \
+            this version's; the rest of the file is left alone.
             """
         )
 
@@ -50,9 +51,11 @@ extension BeaconCLI {
 
             let fm = FileManager.default
             let target = file ?? (fm.fileExists(atPath: "AGENTS.md") ? "AGENTS.md" : "CLAUDE.md")
-            switch try AgentInstructions.append(to: target, tld: tld) {
+            switch try AgentInstructions.write(to: target, tld: tld) {
             case .alreadyPresent:
                 print("\(target) already has Beacon's instructions. Nothing to do.")
+            case .updated:
+                print("Updated Beacon's instructions in \(Output.bold(target)).")
             case .added:
                 print("Added Beacon's instructions to \(Output.bold(target)).")
             }
@@ -67,9 +70,11 @@ extension BeaconCLI {
                 """)
             }
             for agent in agents {
-                switch try AgentInstructions.append(to: agent.file, tld: tld) {
+                switch try AgentInstructions.write(to: agent.file, tld: tld) {
                 case .alreadyPresent:
                     print("\(agent.name): \(agent.file) already has Beacon's instructions.")
+                case .updated:
+                    print("\(agent.name): updated Beacon's instructions in \(Output.bold(agent.file)).")
                 case .added:
                     print("\(agent.name): added Beacon's instructions to \(Output.bold(agent.file)).")
                 }

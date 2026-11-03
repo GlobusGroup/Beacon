@@ -223,7 +223,7 @@ final class BeaconModel: ObservableObject {
             let runnable = Set(sites.filter { $0.runSpec != nil }.map(\.name))
             let relay = status == nil ? nil : (try? client.relayStatus()) ?? nil
             // A couple of stat() calls and two small reads.
-            let agents = AgentInstructions.installedAgents()
+            let agents = AgentInstructions.installedAgents(tld: config.primaryTLD)
             let fingerprint = BeaconInstaller.installedFingerprint()
             return (status, sites, config, running, trusted, runnable, relay, agents, fingerprint)
         }.value
@@ -653,16 +653,16 @@ final class BeaconModel: ObservableObject {
         return !agentsMissingInstructions.isEmpty || !agentsJustAdded.isEmpty
     }
 
-    /// Appends Beacon's instructions to each agent's user-wide file, the same
-    /// as `beacon agent-guide --global`. Nil means every agent that hasn't
-    /// got them yet.
+    /// Writes Beacon's instructions to each agent's user-wide file, the same
+    /// as `beacon agent-guide --global`, replacing an older Beacon's. Nil
+    /// means every agent that hasn't got them yet.
     func addAgentInstructions(to names: [String]? = nil, confirmInMenu: Bool = true) async {
-        let targets = agentsMissingInstructions.filter { names?.contains($0.name) ?? true }
+        let targets = names.map { names in agents.filter { names.contains($0.name) } } ?? agentsMissingInstructions
         let tld = config.primaryTLD
         let failure: String? = await Task.detached {
             for agent in targets {
                 do {
-                    try AgentInstructions.append(to: agent.file, tld: tld)
+                    try AgentInstructions.write(to: agent.file, tld: tld)
                 } catch {
                     return "Couldn't add Beacon's instructions to \(agent.file): \(error.localizedDescription)"
                 }

@@ -180,6 +180,8 @@ Or just for one project, in its `CLAUDE.md`, or `AGENTS.md` if that's the one yo
 beacon agent-guide --write
 ```
 
+When a new version of Beacon changes the note, run the same command again. It replaces the note an older Beacon wrote, between its `<!-- beacon:start -->` and `<!-- beacon:end -->` markers, and leaves the rest of the file alone. In the app, **Settings → Coding agents** shows **Update instructions** for an agent whose note is out of date.
+
 ## Sharing a project on a public URL
 
 If you have a relay running (there's a setup guide [further down](#running-your-own-relay)), you can put any registered project on the internet, which is useful for showing someone work in progress or testing webhooks.

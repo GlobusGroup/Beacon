@@ -368,7 +368,13 @@ struct SettingsPanel: View {
             } else {
                 ForEach(model.agents, id: \.name) { agent in
                     LabeledContent(agent.name) {
-                        if agent.hasInstructions {
+                        if agent.isOutdated {
+                            Button("Update instructions") {
+                                Task { await model.addAgentInstructions(to: [agent.name], confirmInMenu: false) }
+                            }
+                            .buttonStyle(.signalCompact)
+                            .help("Replaces the instructions an older Beacon added to \(agent.file)")
+                        } else if agent.hasInstructions {
                             StatusLabel(text: "Knows about Beacon", tone: .online)
                                 .help(agent.file)
                         } else {
