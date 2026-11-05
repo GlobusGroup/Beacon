@@ -28,6 +28,8 @@ extension BeaconCLI {
             }
             let cli = skipCli ? nil : BeaconInstaller.locateBinary(named: "beacon")
             let script = BeaconInstaller.installScript(daemonSource: daemon, cliSource: cli)
+            // Reinstalling replaces a running daemon; note what it had started.
+            let handover = ProjectHandover.capture(BeaconCLI.client)
 
             print("Installing Beacon's background service…")
             let result: ShellResult
@@ -50,6 +52,7 @@ extension BeaconCLI {
                 Check \(BeaconPaths.logFile) for what went wrong.
                 """)
             }
+            Self.reportRestarted(handover.restore(BeaconCLI.client))
 
             let status = try? BeaconCLI.client.status()
             print("")
@@ -81,6 +84,12 @@ extension BeaconCLI {
         }
 
         /// launchd returns before the daemon has bound its socket.
+        static func reportRestarted(_ names: [String]) {
+            guard !names.isEmpty else { return }
+            print("Restarting \(names.joined(separator: ", ")) under the new service. " +
+                  "The old service started \(names.count == 1 ? "it" : "them"), and couldn't hand over \(names.count == 1 ? "its" : "their") output.")
+        }
+
         private func waitForDaemon(timeout: TimeInterval = 10) -> Bool {
             let deadline = Date().addingTimeInterval(timeout)
             while Date() < deadline {
@@ -136,12 +145,14 @@ extension BeaconCLI {
             // The daemon exits on request and launchd's KeepAlive restarts it,
             // so this needs no password.
             let client = BeaconCLI.client
+            let handover = ProjectHandover.capture(client)
             BeaconCLI.perform { try client.restart() }
             _ = client.waitUntilUnreachable()
             guard client.waitUntilReachable() else {
                 Output.fail("The service stopped but didn't come back. Check \(BeaconPaths.logFile).")
             }
             print("Restarted.")
+            Install.reportRestarted(handover.restore(client))
         }
     }
 }
