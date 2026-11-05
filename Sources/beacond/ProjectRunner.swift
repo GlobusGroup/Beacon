@@ -25,7 +25,11 @@ final class ProjectRunner: @unchecked Sendable {
         var lines: [String] = []
         /// Output after the last newline, waiting for the rest of its line.
         var partial = ""
+        /// The log file, open for appending. The project writes to it
+        /// directly; the daemon only uses this for a stop command's output.
         var logHandle: FileHandle?
+        /// Follows the log file to fill `lines`.
+        var logWatcher: DispatchSourceFileSystemObject?
         var exited = false
 
         init(spec: RunSpec, port: Int, process: Process, phase: String) {
@@ -34,6 +38,8 @@ final class ProjectRunner: @unchecked Sendable {
             self.process = process
             self.phase = phase
         }
+
+        deinit { logWatcher?.cancel() }
     }
 
     /// How long a start may take before Beacon calls it a failure.
@@ -146,32 +152,25 @@ final class ProjectRunner: @unchecked Sendable {
         let process = Self.makeProcess(command: spec.command, path: path, site: site)
         let job = Job(spec: spec, port: site.port, process: process, phase: "Running \(spec.command)")
 
+        // The project writes straight to its log file rather than through a
+        // pipe the daemon reads. A pipe's read end belongs to this process, so
+        // restarting the daemon (an update does) used to break it under a dev
+        // server that kept running: every later write failed, and a server
+        // that logs each request before replying (Python's http.server)
+        // dropped every request while still listening. A file has no reader
+        // to lose.
         let logPath = BeaconPaths.projectLog(for: site.name)
         try? FileManager.default.createDirectory(
             atPath: BeaconPaths.projectLogsDir, withIntermediateDirectories: true
         )
-        FileManager.default.createFile(
-            atPath: logPath, contents: nil, attributes: [.posixPermissions: 0o644]
-        )
-        job.logHandle = FileHandle(forWritingAtPath: logPath)
+        Self.rotateLog(at: logPath)
+        let output = try Self.openLog(at: logPath)
+        job.logHandle = output
+        job.logWatcher = followLog(at: logPath, job: job)
 
-        let output = Pipe()
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = output
         process.standardError = output
-
-        output.fileHandleForReading.readabilityHandler = { [weak self, weak job] handle in
-            let data = handle.availableData
-            guard let self, let job else { return }
-            if data.isEmpty {
-                handle.readabilityHandler = nil
-                return
-            }
-            self.lock.lock()
-            job.logHandle?.write(data)
-            Self.append(data, to: job)
-            self.lock.unlock()
-        }
 
         process.terminationHandler = { [weak self, weak job] process in
             guard let self, let job else { return }
@@ -216,6 +215,56 @@ final class ProjectRunner: @unchecked Sendable {
             )
         }
         return job
+    }
+
+    /// Keeps the previous run's output as `<name>.log.1` instead of
+    /// overwriting it: when a project misbehaves, the run before the restart
+    /// is usually the one worth reading.
+    private static func rotateLog(at path: String) {
+        var info = stat()
+        guard stat(path, &info) == 0, info.st_size > 0 else { return }
+        if rename(path, path + ".1") != 0 {
+            Log.warn("Couldn't keep the previous log \(path): \(String(cString: strerror(errno)))")
+        }
+    }
+
+    /// Opens (creating if needed) the log for appending. `O_APPEND` keeps
+    /// writes from the project and from a stop command from overwriting each
+    /// other. Close-on-exec keeps it out of unrelated children; the project
+    /// still gets it, as the copies on its stdout and stderr.
+    private static func openLog(at path: String) throws -> FileHandle {
+        let fd = open(path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0o644)
+        guard fd >= 0 else {
+            throw BeaconClientError(
+                code: "launch_failed",
+                message: "Couldn't open the log file \(path): \(String(cString: strerror(errno)))"
+            )
+        }
+        return FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+    }
+
+    /// Reads what the project appends to its log, for the progress page and
+    /// `beacon status`. Runs until the job is replaced or dropped.
+    private func followLog(at path: String, job: Job) -> DispatchSourceFileSystemObject? {
+        let fd = open(path, O_RDONLY | O_CLOEXEC)
+        guard fd >= 0 else {
+            Log.warn("Couldn't follow \(path): \(String(cString: strerror(errno)))")
+            return nil
+        }
+        let reader = FileHandle(fileDescriptor: fd, closeOnDealloc: false)
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd, eventMask: [.write, .extend], queue: queue
+        )
+        source.setEventHandler { [weak self, weak job] in
+            guard let self, let job else { return }
+            guard let data = try? reader.readToEnd(), !data.isEmpty else { return }
+            self.lock.lock()
+            Self.append(data, to: job)
+            self.lock.unlock()
+        }
+        source.setCancelHandler { close(fd) }
+        source.resume()
+        return source
     }
 
     /// The command, wrapped so it runs as the project's owner in a login
