@@ -16,8 +16,18 @@ final class ProjectRunner: @unchecked Sendable {
     private final class Job {
         let spec: RunSpec
         let port: Int
-        let process: Process
-        let startedAt = Date()
+        /// Nil for a job taken back from a previous daemon: that process
+        /// isn't our child, so there's no `Process` for it.
+        let process: Process?
+        private let adoptedPID: Int32
+        let startedAt: Date
+        /// The kernel's start time for `pid`, so a saved job is never
+        /// matched to an unrelated process that later reused the PID.
+        var processStart: Double?
+        /// Watches for the exit of a process that isn't our child.
+        var exitWatcher: DispatchSourceProcess?
+
+        var pid: Int32 { process?.processIdentifier ?? adoptedPID }
         var endedAt: Date?
         var state: RunStatus.State = .starting
         var phase: String
@@ -25,15 +35,45 @@ final class ProjectRunner: @unchecked Sendable {
         var lines: [String] = []
         /// Output after the last newline, waiting for the rest of its line.
         var partial = ""
+        /// The log file, open for appending. The project writes to it
+        /// directly; the daemon only uses this for a stop command's output.
         var logHandle: FileHandle?
+        /// Follows the log file to fill `lines`.
+        var logWatcher: DispatchSourceFileSystemObject?
         var exited = false
 
         init(spec: RunSpec, port: Int, process: Process, phase: String) {
             self.spec = spec
             self.port = port
             self.process = process
+            self.adoptedPID = 0
+            self.startedAt = Date()
             self.phase = phase
         }
+
+        init(adopting saved: SavedJob, phase: String) {
+            self.spec = saved.spec
+            self.port = saved.port
+            self.process = nil
+            self.adoptedPID = saved.pid
+            self.startedAt = saved.startedAt
+            self.processStart = saved.processStart
+            self.phase = phase
+        }
+
+        deinit {
+            logWatcher?.cancel()
+            exitWatcher?.cancel()
+        }
+    }
+
+    /// What `running-jobs.json` keeps for each project.
+    struct SavedJob: Codable {
+        let pid: Int32
+        let processStart: Double
+        let port: Int
+        let spec: RunSpec
+        let startedAt: Date
     }
 
     /// How long a start may take before Beacon calls it a failure.
@@ -43,6 +83,8 @@ final class ProjectRunner: @unchecked Sendable {
     private let lock = NSLock()
     private var jobs: [String: Job] = [:]
     private var startTimes: [String: Double] = [:]
+    /// Projects being restarted, and since when.
+    private var restarting: [String: Date] = [:]
     private let queue = DispatchQueue(label: "io.beacon.runner")
 
     init() {
@@ -57,6 +99,7 @@ final class ProjectRunner: @unchecked Sendable {
     func status(for site: Site) -> RunStatus {
         lock.lock()
         defer { lock.unlock() }
+        if let since = restarting[site.name] { return restartingStatus(site, since: since) }
         if let job = jobs[site.name], job.port == site.port, !job.exited || job.spec == site.runSpec {
             refreshLocked(name: site.name, job: job)
             return makeStatusLocked(name: site.name, job: job)
@@ -104,14 +147,88 @@ final class ProjectRunner: @unchecked Sendable {
         }
         // A failed or stopped attempt may have left processes behind.
         if let old = jobs.removeValue(forKey: site.name), !old.exited {
-            Self.terminateTree(old.process.processIdentifier)
+            Self.terminateTree(old.pid)
         }
 
         let job = try launchLocked(site: site, path: path, spec: spec)
         jobs[site.name] = job
+        saveJobsLocked()
         Log.info("Starting \(site.name): \(spec.command)")
         scheduleCheck(name: site.name, job: job)
         return makeStatusLocked(name: site.name, job: job)
+    }
+
+    /// Stops whatever is serving the project's port and starts it again. For
+    /// a dev server that's running but broken, such as one an older Beacon
+    /// started whose output went away with that daemon.
+    ///
+    /// Returns at once; the page follows the rest through `status(for:)`,
+    /// which reports "starting" for the whole restart so it never mistakes
+    /// the old server, still on its way out, for the new one.
+    func restart(_ site: Site) throws -> RunStatus {
+        guard let path = site.path, FileManager.default.fileExists(atPath: path), site.runSpec != nil else {
+            // Let `start` explain what's missing.
+            return try start(site)
+        }
+
+        lock.lock()
+        defer { lock.unlock() }
+        if let since = restarting[site.name] { return restartingStatus(site, since: since) }
+
+        let since = Date()
+        restarting[site.name] = since
+        if let job = jobs.removeValue(forKey: site.name), !job.exited {
+            Self.terminateTree(job.pid)
+        } else {
+            // Not one this daemon is tracking: started by an older Beacon or
+            // by hand. Stop what listens on the port, but only if it runs as
+            // the project's owner, so the restart can't reach anything else.
+            var info = stat()
+            let owner = stat(path, &info) == 0 ? info.st_uid : nil
+            for pid in Self.listeners(on: site.port) where pid != getpid() {
+                guard let uid = Self.processUID(pid), uid == owner, uid != 0 else {
+                    Log.warn("\(site.name): not stopping pid \(pid) on port \(site.port); it isn't the project owner's.")
+                    continue
+                }
+                Self.terminateTree(pid)
+            }
+        }
+        saveJobsLocked()
+        Log.info("Restarting \(site.name).")
+        queue.async { [weak self] in self?.finishRestart(site, deadline: since + 10) }
+        return restartingStatus(site, since: since)
+    }
+
+    /// Waits for the old server to let go of the port (`terminateTree` gets
+    /// to SIGKILL after five seconds), then starts the project.
+    private func finishRestart(_ site: Site, deadline: Date) {
+        if Self.isAccepting(site.port), Date() < deadline {
+            queue.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                self?.finishRestart(site, deadline: deadline)
+            }
+            return
+        }
+        lock.lock()
+        restarting[site.name] = nil
+        lock.unlock()
+        if Self.isAccepting(site.port) {
+            Log.warn("\(site.name): the old server still holds port \(site.port) after the restart.")
+        }
+        do {
+            _ = try start(site)
+        } catch {
+            Log.warn("\(site.name): couldn't start it after stopping it: \(error)")
+        }
+    }
+
+    private func restartingStatus(_ site: Site, since: Date) -> RunStatus {
+        let spec = site.runSpec
+        return RunStatus(
+            name: site.name, state: .starting, command: spec?.command, label: spec?.label,
+            phase: "Stopping the old server…", startedAt: since,
+            elapsed: Date().timeIntervalSince(since),
+            expectedSeconds: spec.map { startTimes[Self.timingKey(site.name, $0)] ?? $0.expectedSeconds }
+        )
     }
 
     func stop(_ site: Site) -> RunStatus {
@@ -121,7 +238,8 @@ final class ProjectRunner: @unchecked Sendable {
             job.state = .stopped
             job.phase = "Stopped"
             job.endedAt = Date()
-            if !job.exited { Self.terminateTree(job.process.processIdentifier) }
+            if !job.exited { Self.terminateTree(job.pid) }
+            saveJobsLocked()
         }
         lock.unlock()
 
@@ -146,65 +264,31 @@ final class ProjectRunner: @unchecked Sendable {
         let process = Self.makeProcess(command: spec.command, path: path, site: site)
         let job = Job(spec: spec, port: site.port, process: process, phase: "Running \(spec.command)")
 
+        // The project writes straight to its log file rather than through a
+        // pipe the daemon reads. A pipe's read end belongs to this process, so
+        // restarting the daemon (an update does) used to break it under a dev
+        // server that kept running: every later write failed, and a server
+        // that logs each request before replying (Python's http.server)
+        // dropped every request while still listening. A file has no reader
+        // to lose.
         let logPath = BeaconPaths.projectLog(for: site.name)
         try? FileManager.default.createDirectory(
             atPath: BeaconPaths.projectLogsDir, withIntermediateDirectories: true
         )
-        FileManager.default.createFile(
-            atPath: logPath, contents: nil, attributes: [.posixPermissions: 0o644]
-        )
-        job.logHandle = FileHandle(forWritingAtPath: logPath)
+        Self.rotateLog(at: logPath)
+        let output = try Self.openLog(at: logPath)
+        job.logHandle = output
+        job.logWatcher = followLog(at: logPath, job: job)
 
-        let output = Pipe()
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = output
         process.standardError = output
-
-        output.fileHandleForReading.readabilityHandler = { [weak self, weak job] handle in
-            let data = handle.availableData
-            guard let self, let job else { return }
-            if data.isEmpty {
-                handle.readabilityHandler = nil
-                return
-            }
-            self.lock.lock()
-            job.logHandle?.write(data)
-            Self.append(data, to: job)
-            self.lock.unlock()
-        }
 
         process.terminationHandler = { [weak self, weak job] process in
             guard let self, let job else { return }
             self.lock.lock()
             defer { self.lock.unlock() }
-            job.exited = true
-            let code = process.terminationStatus
-            switch job.state {
-            case .starting:
-                if Self.isAccepting(job.port) {
-                    self.markRunningLocked(name: site.name, job: job)
-                } else if code == 0 {
-                    // A clean exit before the port answers is how detached
-                    // commands (`docker compose up -d`, a script that
-                    // backgrounds a server) say they're done. Keep waiting;
-                    // the timeout catches one that never comes up.
-                    job.phase = job.spec.detached
-                        ? "Containers are up — waiting for port \(job.port)"
-                        : "Waiting for port \(job.port)"
-                } else {
-                    job.state = .failed
-                    job.endedAt = Date()
-                    job.phase = "Exited with status \(code)"
-                    job.message = "`\(job.spec.command)` exited with status \(code) before anything listened on port \(job.port)."
-                    Log.warn("\(site.name): \(job.message!)")
-                }
-            case .running where !Self.isAccepting(job.port):
-                job.state = .stopped
-                job.endedAt = Date()
-                job.phase = "Exited with status \(code)"
-            default:
-                break
-            }
+            self.handleExitLocked(name: site.name, job: job, code: process.terminationStatus)
         }
 
         do {
@@ -215,7 +299,190 @@ final class ProjectRunner: @unchecked Sendable {
                 message: "Couldn't run `\(spec.command)`: \(error.localizedDescription)"
             )
         }
+        job.processStart = Self.processStartTime(process.processIdentifier)
         return job
+    }
+
+    /// `code` is nil for a job taken back from a previous daemon: only a
+    /// parent learns a process's exit status.
+    private func handleExitLocked(name: String, job: Job, code: Int32?) {
+        guard !job.exited else { return }
+        job.exited = true
+        let status = code.map { "Exited with status \($0)" } ?? "Exited"
+        switch job.state {
+        case .starting:
+            if Self.isAccepting(job.port) {
+                markRunningLocked(name: name, job: job)
+            } else if code == 0 || code == nil {
+                // A clean exit before the port answers is how detached
+                // commands (`docker compose up -d`, a script that
+                // backgrounds a server) say they're done. Keep waiting;
+                // the timeout catches one that never comes up.
+                job.phase = job.spec.detached
+                    ? "Containers are up — waiting for port \(job.port)"
+                    : "Waiting for port \(job.port)"
+            } else {
+                job.state = .failed
+                job.endedAt = Date()
+                job.phase = status
+                job.message = "`\(job.spec.command)` exited with status \(code!) before anything listened on port \(job.port)."
+                Log.warn("\(name): \(job.message!)")
+            }
+        case .running where !Self.isAccepting(job.port):
+            job.state = .stopped
+            job.endedAt = Date()
+            job.phase = status
+        default:
+            break
+        }
+        if jobs[name] === job { saveJobsLocked() }
+    }
+
+    // MARK: - Surviving a daemon restart
+
+    /// Takes back the projects a previous daemon started and that are still
+    /// running, so their status, output and Stop keep working. Called once,
+    /// at startup, with the registry's projects.
+    func adopt(_ sites: [Site]) {
+        guard let data = FileManager.default.contents(atPath: BeaconPaths.runningJobsFile),
+              let saved = try? JSONDecoder().decode([String: SavedJob].self, from: data)
+        else { return }
+
+        lock.lock()
+        defer { lock.unlock() }
+        for (name, entry) in saved {
+            guard let site = sites.first(where: { $0.name == name }),
+                  site.port == entry.port, site.runSpec == entry.spec,
+                  Self.processStartTime(entry.pid) == entry.processStart
+            else { continue }
+
+            let accepting = Self.isAccepting(entry.port)
+            let job = Job(
+                adopting: entry,
+                phase: accepting ? "Listening on port \(entry.port)" : "Running \(entry.spec.command)"
+            )
+            job.state = accepting ? .running : .starting
+            let logPath = BeaconPaths.projectLog(for: name)
+            job.logHandle = try? Self.openLog(at: logPath)
+            job.logWatcher = followLog(at: logPath, job: job)
+            job.exitWatcher = watchExit(name: name, job: job)
+            jobs[name] = job
+            if !accepting { scheduleCheck(name: name, job: job) }
+            Log.info("Took back \(name) (pid \(entry.pid)), started by the previous daemon.")
+        }
+        saveJobsLocked()
+    }
+
+    /// The exit of a process that isn't our child, which `Process` can't report.
+    private func watchExit(name: String, job: Job) -> DispatchSourceProcess {
+        let source = DispatchSource.makeProcessSource(identifier: job.pid, eventMask: .exit, queue: queue)
+        source.setEventHandler { [weak self, weak job] in
+            guard let self, let job else { return }
+            self.lock.lock()
+            defer { self.lock.unlock() }
+            self.handleExitLocked(name: name, job: job, code: nil)
+        }
+        source.resume()
+        // It may have gone between the check and the watch.
+        if kill(job.pid, 0) != 0, errno == ESRCH {
+            queue.async { [weak self, weak job] in
+                guard let self, let job else { return }
+                self.lock.lock()
+                defer { self.lock.unlock() }
+                self.handleExitLocked(name: name, job: job, code: nil)
+            }
+        }
+        return source
+    }
+
+    private func saveJobsLocked() {
+        var saved: [String: SavedJob] = [:]
+        for (name, job) in jobs where !job.exited && (job.state == .running || job.state == .starting) {
+            guard let processStart = job.processStart else { continue }
+            saved[name] = SavedJob(
+                pid: job.pid, processStart: processStart, port: job.port,
+                spec: job.spec, startedAt: job.startedAt
+            )
+        }
+        guard let data = try? JSONEncoder().encode(saved) else { return }
+        try? data.write(to: URL(fileURLWithPath: BeaconPaths.runningJobsFile), options: .atomic)
+    }
+
+    /// The processes listening on a local TCP port.
+    static func listeners(on port: Int) -> [Int32] {
+        Shell.run("/usr/sbin/lsof", ["-nP", "-t", "-iTCP:\(port)", "-sTCP:LISTEN"]).stdout
+            .split(separator: "\n").compactMap { Int32($0) }
+    }
+
+    /// The real user a process runs as, or nil if there's no such process.
+    static func processUID(_ pid: Int32) -> uid_t? {
+        guard pid > 0 else { return nil }
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.stride
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+        guard sysctl(&mib, u_int(mib.count), &info, &size, nil, 0) == 0, size > 0 else { return nil }
+        return info.kp_eproc.e_pcred.p_ruid
+    }
+
+    /// When the kernel started `pid`, or nil if there's no such process.
+    static func processStartTime(_ pid: Int32) -> Double? {
+        guard pid > 0 else { return nil }
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.stride
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+        guard sysctl(&mib, u_int(mib.count), &info, &size, nil, 0) == 0, size > 0 else { return nil }
+        let start = info.kp_proc.p_un.__p_starttime
+        return Double(start.tv_sec) + Double(start.tv_usec) / 1_000_000
+    }
+
+    /// Keeps the previous run's output as `<name>.log.1` instead of
+    /// overwriting it: when a project misbehaves, the run before the restart
+    /// is usually the one worth reading.
+    private static func rotateLog(at path: String) {
+        var info = stat()
+        guard stat(path, &info) == 0, info.st_size > 0 else { return }
+        if rename(path, path + ".1") != 0 {
+            Log.warn("Couldn't keep the previous log \(path): \(String(cString: strerror(errno)))")
+        }
+    }
+
+    /// Opens (creating if needed) the log for appending. `O_APPEND` keeps
+    /// writes from the project and from a stop command from overwriting each
+    /// other. Close-on-exec keeps it out of unrelated children; the project
+    /// still gets it, as the copies on its stdout and stderr.
+    private static func openLog(at path: String) throws -> FileHandle {
+        let fd = open(path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0o644)
+        guard fd >= 0 else {
+            throw BeaconClientError(
+                code: "launch_failed",
+                message: "Couldn't open the log file \(path): \(String(cString: strerror(errno)))"
+            )
+        }
+        return FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+    }
+
+    /// Reads what the project appends to its log, for the progress page and
+    /// `beacon status`. Runs until the job is replaced or dropped.
+    private func followLog(at path: String, job: Job) -> DispatchSourceFileSystemObject? {
+        let fd = open(path, O_RDONLY | O_CLOEXEC)
+        guard fd >= 0 else {
+            Log.warn("Couldn't follow \(path): \(String(cString: strerror(errno)))")
+            return nil
+        }
+        let reader = FileHandle(fileDescriptor: fd, closeOnDealloc: false)
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd, eventMask: [.write, .extend], queue: queue
+        )
+        source.setEventHandler { [weak self, weak job] in
+            guard let self, let job else { return }
+            guard let data = try? reader.readToEnd(), !data.isEmpty else { return }
+            self.lock.lock()
+            Self.append(data, to: job)
+            self.lock.unlock()
+        }
+        source.setCancelHandler { close(fd) }
+        source.resume()
+        return source
     }
 
     /// The command, wrapped so it runs as the project's owner in a login

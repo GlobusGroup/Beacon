@@ -19,6 +19,8 @@ public struct BeaconRequest: Codable, Sendable {
         /// Stop a project Beacon started.
         case stop
         case runStatus
+        /// Stop whatever serves a project's port and start it again.
+        case restartProject
         /// Make a project reachable through the relay.
         case share
         case unshare

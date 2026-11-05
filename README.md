@@ -142,7 +142,7 @@ You can do the same from a terminal:
 
 ```bash
 beacon start shop      # waits until it's up, printing its output
-beacon logs shop       # follow the output afterwards
+beacon logs shop       # follow the output afterwards (piped, it prints the tail and exits)
 beacon stop shop       # also runs `docker compose stop` for compose projects
 ```
 

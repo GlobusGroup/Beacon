@@ -496,6 +496,8 @@ final class BeaconModel: ObservableObject {
 
         let client = self.client
         let outcome: ActionOutcome = await Task.detached {
+            // An update replaces a running daemon; note what it had started.
+            let handover = ProjectHandover.capture(client)
             let result = Shell.runAsAdmin(
                 script: BeaconInstaller.installScript(
                     daemonSource: daemon, cliSource: cli,
@@ -510,6 +512,7 @@ final class BeaconModel: ObservableObject {
             guard client.waitUntilReachable(timeout: 15) else {
                 return .failed("The service installed but didn't start. Check \(BeaconPaths.logFile) for the reason.")
             }
+            handover.restore(client)
             return .succeeded
         }.value
 
@@ -571,15 +574,18 @@ final class BeaconModel: ObservableObject {
 
         let client = self.client
         let failure: String? = await Task.detached {
+            let handover = ProjectHandover.capture(client)
             do {
                 try client.restart()
             } catch {
                 return error.localizedDescription
             }
             _ = client.waitUntilUnreachable()
-            return client.waitUntilReachable()
-                ? nil
-                : "The service stopped but didn't come back. Check \(BeaconPaths.logFile)."
+            guard client.waitUntilReachable() else {
+                return "The service stopped but didn't come back. Check \(BeaconPaths.logFile)."
+            }
+            handover.restore(client)
+            return nil
         }.value
 
         notice = failure

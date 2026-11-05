@@ -86,7 +86,7 @@ final class ControlService: @unchecked Sendable {
                 }
                 return BeaconResponse()
 
-            case .start, .stop, .runStatus:
+            case .start, .stop, .runStatus, .restartProject:
                 guard let name = request.name else {
                     return .failure("missing_name", "Which project?")
                 }
@@ -96,6 +96,7 @@ final class ControlService: @unchecked Sendable {
                 switch request.op {
                 case .start: return BeaconResponse(run: try runner.start(site))
                 case .stop: return BeaconResponse(run: runner.stop(site))
+                case .restartProject: return BeaconResponse(run: try runner.restart(site))
                 default: return BeaconResponse(run: runner.status(for: site))
                 }
 

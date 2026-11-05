@@ -34,6 +34,9 @@ public enum BeaconPaths {
     public static var projectLogsDir: String { supportDir + "/logs" }
     /// How long each project took to come up last time, for the progress bar.
     public static var startTimesFile: String { supportDir + "/start-times.json" }
+    /// Projects the daemon started and is still running, so a restarted
+    /// daemon can take them back instead of losing track of them.
+    public static var runningJobsFile: String { supportDir + "/running-jobs.json" }
 
     public static func projectLog(for name: String) -> String { projectLogsDir + "/" + name + ".log" }
 

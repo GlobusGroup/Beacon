@@ -137,6 +137,13 @@ public struct BeaconClient: Sendable {
         try require(BeaconRequest(op: .stop, name: name)).run
     }
 
+    /// Stops what serves the project's port and starts it again. Returns at
+    /// once; poll `runStatus`.
+    @discardableResult
+    public func restartProject(name: String) throws -> RunStatus? {
+        try require(BeaconRequest(op: .restartProject, name: name)).run
+    }
+
     public func runStatus(name: String) throws -> RunStatus? {
         try require(BeaconRequest(op: .runStatus, name: name)).run
     }
