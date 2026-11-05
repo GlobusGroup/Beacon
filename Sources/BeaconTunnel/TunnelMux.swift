@@ -33,7 +33,10 @@ public final class TunnelMux {
     private var streams: [UInt32: Stream] = [:]
     private var nextStreamID: UInt32 = 1
     private var keepalive: RepeatedTask?
-    private var lastHeard = NIODeadline.now()
+    /// Wall-clock, not `NIODeadline`: on macOS the monotonic clock stops while
+    /// the Mac sleeps, so a tunnel that died during a long sleep would look
+    /// freshly heard from on wake and linger for another full timeout.
+    private var lastHeard = Date()
 
     /// The far side opened a stream. The payload is the share name.
     public var onOpen: ((UInt32, String) -> Void)?
@@ -131,7 +134,8 @@ public final class TunnelMux {
     public func startKeepalive(interval: TimeAmount, timeout: TimeAmount) {
         keepalive = eventLoop.scheduleRepeatedTask(initialDelay: interval, delay: interval) { [weak self] _ in
             guard let self else { return }
-            if NIODeadline.now() - self.lastHeard > timeout {
+            let silentFor = Date().timeIntervalSince(self.lastHeard)
+            if silentFor > Double(timeout.nanoseconds) / 1_000_000_000 {
                 self.channel.close(promise: nil)
                 return
             }
@@ -142,7 +146,7 @@ public final class TunnelMux {
     // MARK: - Inbound
 
     func receive(_ frame: WebSocketFrame) {
-        lastHeard = .now()
+        lastHeard = Date()
         switch frame.opcode {
         case .binary:
             guard let decoded = TunnelFrame.decode(frame.unmaskedData) else { return }
