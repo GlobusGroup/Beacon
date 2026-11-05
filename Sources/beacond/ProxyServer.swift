@@ -170,8 +170,10 @@ final class ProxyFrontendHandler: ChannelInboundHandler {
 
         ClientBootstrap(group: channel.eventLoop)
             .channelOption(ChannelOptions.tcpOption(.tcp_nodelay), value: 1)
-            .channelInitializer { upstream in
-                upstream.pipeline.addHandler(ProxyBackendHandler(frontend: channel))
+            .channelInitializer { [runner] upstream in
+                upstream.pipeline.addHandler(ProxyBackendHandler(frontend: channel) {
+                    ProxyResponder.sendNotResponding(on: channel, site: site, run: runner.status(for: site))
+                })
             }
             .connect(host: "127.0.0.1", port: site.port)
             .whenComplete { [self] result in
@@ -199,17 +201,32 @@ final class ProxyBackendHandler: ChannelInboundHandler {
     typealias OutboundOut = ByteBuffer
 
     private let frontend: Channel
+    /// Answers the browser when the dev server closes without replying.
+    private let onSilentClose: () -> Void
+    private var replied = false
 
-    init(frontend: Channel) {
+    init(frontend: Channel, onSilentClose: @escaping () -> Void) {
         self.frontend = frontend
+        self.onSilentClose = onSilentClose
     }
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
+        replied = true
         frontend.writeAndFlush(unwrapInboundIn(data), promise: nil)
     }
 
+    /// A dev server that accepts the connection and closes it without a byte
+    /// is broken, not stopped. Python's server does exactly that once its
+    /// stderr is gone. Passing the close on would show the browser a blank
+    /// "empty response" error, so say what's wrong and offer a restart.
     func channelInactive(context: ChannelHandlerContext) {
-        if frontend.isActive { frontend.close(promise: nil) }
+        if frontend.isActive {
+            if replied {
+                frontend.close(promise: nil)
+            } else {
+                onSilentClose()
+            }
+        }
         context.fireChannelInactive()
     }
 

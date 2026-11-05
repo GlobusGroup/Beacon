@@ -81,20 +81,43 @@ enum ProxyResponder {
     /// how to start the project it offers to, then follows the start through
     /// `/__beacon/status` and reloads once the port answers.
     static func sendUpstreamDown(on channel: Channel, site: Site, run: RunStatus) {
-        let title = "\(escape(site.name)) isn't running"
-        let chip = (label: "Offline", tone: "offline")
-        let detail = "Nothing is listening on port <code>\(site.port)</code>"
+        sendLaunchPage(
+            on: channel, site: site, run: run, action: "start",
+            title: "\(escape(site.name)) isn't running",
+            chip: (label: "Offline", tone: "offline"),
+            detail: "Nothing is listening on port <code>\(site.port)</code>"
+        )
+    }
 
+    /// The page for a dev server that accepted the connection and closed it
+    /// without replying: still running, but broken. Offers a restart.
+    static func sendNotResponding(on channel: Channel, site: Site, run: RunStatus) {
+        sendLaunchPage(
+            on: channel, site: site, run: run, action: "restart",
+            title: "\(escape(site.name)) isn't responding",
+            chip: (label: "Not responding", tone: "failed"),
+            detail: "Something is listening on port <code>\(site.port)</code>, but it closed the connection without a reply"
+        )
+    }
+
+    private static func sendLaunchPage(
+        on channel: Channel, site: Site, run: RunStatus, action: String,
+        title: String, chip: (label: String, tone: String), detail: String
+    ) {
         guard let command = run.command else {
+            let lead = action == "restart"
+                ? "Restart its dev server. To let Beacon do it from here:"
+                : "To start it from here:"
             send(
                 on: channel, status: "502 Bad Gateway", title: title, detail: detail, chip: chip,
                 hint: """
-                <p class="muted">To start it from here: \
+                <p class="muted">\(lead) \
                 <code>beacon register \(escape(site.name)) --run "&lt;command&gt;"</code></p>
                 """
             )
             return
         }
+        let verb = action == "restart" ? "Restart" : "Start"
 
         let initial = (try? BeaconJSON.encoder.encode(run))
             .map { String(decoding: $0, as: UTF8.self) } ?? "null"
@@ -105,7 +128,7 @@ enum ProxyResponder {
             on: channel, status: "502 Bad Gateway", title: title, detail: detail, chip: chip, name: site.name,
             hint: """
             <section id="launch">
-              <button id="start" type="button" title="Runs: \(escape(command))">Start \(escape(site.name))</button>
+              <button id="start" type="button" title="Runs: \(escape(command))">\(verb) \(escape(site.name))</button>
             </section>
             <section id="progress" hidden>
               <div class="status"><span class="spinner" aria-hidden="true"></span><span id="phase">Starting…</span><span id="elapsed" class="muted"></span></div>
@@ -119,16 +142,17 @@ enum ProxyResponder {
               <button id="retry" type="button" hidden>Try again</button>
             </section>
             """,
-            script: startScript(initial: initial)
+            script: startScript(initial: initial, action: action)
         )
     }
 
     /// Kept free of Swift interpolation apart from the initial status, so the
     /// JavaScript reads as JavaScript.
-    private static func startScript(initial: String) -> String {
+    private static func startScript(initial: String, action: String) -> String {
         let safeInitial = initial.replacingOccurrences(of: "</", with: "<\\/")
         return """
         const initial = \(safeInitial);
+        const action = "\(action)";
         """ + #"""
         const $ = (id) => document.getElementById(id);
         let polling = false;
@@ -212,11 +236,11 @@ enum ProxyResponder {
         async function start() {
           $("start").disabled = true;
           $("retry").hidden = true;
-          follow({ state: "starting", phase: "Asking Beacon to start it…", elapsed: 0, expectedSeconds: initial && initial.expectedSeconds });
+          follow({ state: "starting", phase: "Asking Beacon to " + action + " it…", elapsed: 0, expectedSeconds: initial && initial.expectedSeconds });
           try {
-            const response = await fetch("/__beacon/start", {
+            const response = await fetch("/__beacon/" + action, {
               method: "POST",
-              headers: { "X-Beacon-Action": "start" },
+              headers: { "X-Beacon-Action": action },
             });
             const body = await response.json();
             if (!response.ok || body.ok === false) {

@@ -83,6 +83,8 @@ final class ProjectRunner: @unchecked Sendable {
     private let lock = NSLock()
     private var jobs: [String: Job] = [:]
     private var startTimes: [String: Double] = [:]
+    /// Projects being restarted, and since when.
+    private var restarting: [String: Date] = [:]
     private let queue = DispatchQueue(label: "io.beacon.runner")
 
     init() {
@@ -97,6 +99,7 @@ final class ProjectRunner: @unchecked Sendable {
     func status(for site: Site) -> RunStatus {
         lock.lock()
         defer { lock.unlock() }
+        if let since = restarting[site.name] { return restartingStatus(site, since: since) }
         if let job = jobs[site.name], job.port == site.port, !job.exited || job.spec == site.runSpec {
             refreshLocked(name: site.name, job: job)
             return makeStatusLocked(name: site.name, job: job)
@@ -153,6 +156,79 @@ final class ProjectRunner: @unchecked Sendable {
         Log.info("Starting \(site.name): \(spec.command)")
         scheduleCheck(name: site.name, job: job)
         return makeStatusLocked(name: site.name, job: job)
+    }
+
+    /// Stops whatever is serving the project's port and starts it again. For
+    /// a dev server that's running but broken, such as one an older Beacon
+    /// started whose output went away with that daemon.
+    ///
+    /// Returns at once; the page follows the rest through `status(for:)`,
+    /// which reports "starting" for the whole restart so it never mistakes
+    /// the old server, still on its way out, for the new one.
+    func restart(_ site: Site) throws -> RunStatus {
+        guard let path = site.path, FileManager.default.fileExists(atPath: path), site.runSpec != nil else {
+            // Let `start` explain what's missing.
+            return try start(site)
+        }
+
+        lock.lock()
+        defer { lock.unlock() }
+        if let since = restarting[site.name] { return restartingStatus(site, since: since) }
+
+        let since = Date()
+        restarting[site.name] = since
+        if let job = jobs.removeValue(forKey: site.name), !job.exited {
+            Self.terminateTree(job.pid)
+        } else {
+            // Not one this daemon is tracking: started by an older Beacon or
+            // by hand. Stop what listens on the port, but only if it runs as
+            // the project's owner, so the restart can't reach anything else.
+            var info = stat()
+            let owner = stat(path, &info) == 0 ? info.st_uid : nil
+            for pid in Self.listeners(on: site.port) where pid != getpid() {
+                guard let uid = Self.processUID(pid), uid == owner, uid != 0 else {
+                    Log.warn("\(site.name): not stopping pid \(pid) on port \(site.port); it isn't the project owner's.")
+                    continue
+                }
+                Self.terminateTree(pid)
+            }
+        }
+        saveJobsLocked()
+        Log.info("Restarting \(site.name).")
+        queue.async { [weak self] in self?.finishRestart(site, deadline: since + 10) }
+        return restartingStatus(site, since: since)
+    }
+
+    /// Waits for the old server to let go of the port (`terminateTree` gets
+    /// to SIGKILL after five seconds), then starts the project.
+    private func finishRestart(_ site: Site, deadline: Date) {
+        if Self.isAccepting(site.port), Date() < deadline {
+            queue.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                self?.finishRestart(site, deadline: deadline)
+            }
+            return
+        }
+        lock.lock()
+        restarting[site.name] = nil
+        lock.unlock()
+        if Self.isAccepting(site.port) {
+            Log.warn("\(site.name): the old server still holds port \(site.port) after the restart.")
+        }
+        do {
+            _ = try start(site)
+        } catch {
+            Log.warn("\(site.name): couldn't start it after stopping it: \(error)")
+        }
+    }
+
+    private func restartingStatus(_ site: Site, since: Date) -> RunStatus {
+        let spec = site.runSpec
+        return RunStatus(
+            name: site.name, state: .starting, command: spec?.command, label: spec?.label,
+            phase: "Stopping the old server…", startedAt: since,
+            elapsed: Date().timeIntervalSince(since),
+            expectedSeconds: spec.map { startTimes[Self.timingKey(site.name, $0)] ?? $0.expectedSeconds }
+        )
     }
 
     func stop(_ site: Site) -> RunStatus {
@@ -330,6 +406,22 @@ final class ProjectRunner: @unchecked Sendable {
         }
         guard let data = try? JSONEncoder().encode(saved) else { return }
         try? data.write(to: URL(fileURLWithPath: BeaconPaths.runningJobsFile), options: .atomic)
+    }
+
+    /// The processes listening on a local TCP port.
+    static func listeners(on port: Int) -> [Int32] {
+        Shell.run("/usr/sbin/lsof", ["-nP", "-t", "-iTCP:\(port)", "-sTCP:LISTEN"]).stdout
+            .split(separator: "\n").compactMap { Int32($0) }
+    }
+
+    /// The real user a process runs as, or nil if there's no such process.
+    static func processUID(_ pid: Int32) -> uid_t? {
+        guard pid > 0 else { return nil }
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.stride
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+        guard sysctl(&mib, u_int(mib.count), &info, &size, nil, 0) == 0, size > 0 else { return nil }
+        return info.kp_eproc.e_pcred.p_ruid
     }
 
     /// When the kernel started `pid`, or nil if there's no such process.
