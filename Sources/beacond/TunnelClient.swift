@@ -1,6 +1,7 @@
 import BeaconKit
 import BeaconTunnel
 import Foundation
+import Network
 import NIOCore
 import NIOPosix
 import NIOSSL
@@ -69,6 +70,14 @@ final class TunnelClient: @unchecked Sendable {
     private var generation = 0
     private lazy var tlsContext: NIOSSLContext? = try? NIOSSLContext(configuration: .makeClientConfiguration())
 
+    /// Watches for the Mac changing networks (office to home, Wi-Fi to
+    /// Ethernet). The old tunnel's socket is bound to an address that no longer
+    /// exists, and nothing tells either end, so redial straight away.
+    private let pathMonitor = NWPathMonitor()
+    private let pathQueue = DispatchQueue(label: "beacon.tunnel.path")
+    /// Touched on `pathQueue` only.
+    private var lastPath: String?
+
     init(group: EventLoopGroup, registry: Registry) {
         self.loop = group.next()
         self.registry = registry
@@ -79,6 +88,31 @@ final class TunnelClient: @unchecked Sendable {
 
     func start() {
         loop.execute { self.reconcile() }
+        pathMonitor.pathUpdateHandler = { [weak self] path in self?.pathChanged(path) }
+        pathMonitor.start(queue: pathQueue)
+    }
+
+    // MARK: - Network changes (pathQueue)
+
+    private func pathChanged(_ path: NWPath) {
+        let signature = path.status == .satisfied
+            ? path.availableInterfaces.map(\.name).sorted().joined(separator: ",")
+            : "offline"
+        let previous = lastPath
+        lastPath = signature
+        // The first update only reports how things are at launch.
+        guard let previous, previous != signature, signature != "offline" else { return }
+        loop.execute { self.redialAfterNetworkChange() }
+    }
+
+    /// On loop. Drops whatever tunnel exists (it's bound to the old network)
+    /// and dials again now, rather than waiting for keepalive or a backoff.
+    private func redialAfterNetworkChange() {
+        guard connectedTo != nil else { return }
+        Log.info("Network changed; reconnecting to the relay.")
+        disconnect()
+        retryDelay = .seconds(1)
+        reconcile()
     }
 
     // MARK: - Control (any thread)
@@ -182,6 +216,7 @@ final class TunnelClient: @unchecked Sendable {
     }
 
     private func disconnect() {
+        forgetConfirmed()
         generation += 1
         retry?.cancel()
         retry = nil
@@ -238,6 +273,15 @@ final class TunnelClient: @unchecked Sendable {
                 case .success(let channel):
                     self.channel = channel
                     channel.closeFuture.whenComplete { [self] _ in disconnected(attempt) }
+                    // connectTimeout only covers TCP. A network that accepts the
+                    // connection but never finishes TLS or the upgrade (a captive
+                    // portal, a half-up VPN) would otherwise hold this attempt
+                    // open forever, with no retry ever scheduled.
+                    loop.scheduleTask(in: .seconds(15)) { [self] in
+                        guard attempt == generation, mux == nil, self.channel === channel else { return }
+                        update(state: .failed, error: "The relay at \(target.hostHeader) didn't answer.")
+                        channel.close(promise: nil)
+                    }
                 case .failure(let error):
                     failed(attempt, "Couldn't reach \(target.hostHeader): \(Self.describe(error)).")
                 }
@@ -284,7 +328,18 @@ final class TunnelClient: @unchecked Sendable {
         }
         channel = nil
         mux = nil
+        forgetConfirmed()
         scheduleRetry()
+    }
+
+    /// The relay's last answer only holds while its tunnel is up. Without
+    /// this, the app keeps showing a public URL that now leads nowhere.
+    private func forgetConfirmed() {
+        lock.withLock {
+            guard !confirmed.isEmpty else { return }
+            confirmed = [:]
+            publishLocked(state: status.state)
+        }
     }
 
     private func failed(_ attempt: Int, _ message: String) {
