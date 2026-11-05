@@ -44,6 +44,7 @@ extension Beacond {
             let routes = RouteTable()
             let tls = TLSContextBox()
             let runner = ProjectRunner()
+            runner.adopt(registry.allSites)
 
             try prepare(registry: registry, routes: routes, tls: tls)
 

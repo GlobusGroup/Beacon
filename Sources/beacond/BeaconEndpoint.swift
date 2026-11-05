@@ -38,21 +38,23 @@ enum BeaconEndpoint {
         case ("GET", prefix + "status"):
             ProxyResponder.sendJSON(on: channel, status: "200 OK", runner.status(for: site))
 
-        case ("POST", prefix + "start"):
+        case ("POST", prefix + "start"), ("POST", prefix + "restart"):
+            let action = String(path.dropFirst(prefix.count))
             // A custom header can't be sent cross-origin without a CORS
             // preflight, which Beacon never approves. That stops any other
             // page in the browser from starting projects behind your back.
-            guard head.value(of: "X-Beacon-Action") == "start",
+            guard head.value(of: "X-Beacon-Action") == action,
                   (head.value(of: "Sec-Fetch-Site") ?? "same-origin") == "same-origin"
             else {
                 ProxyResponder.sendJSON(
                     on: channel, status: "403 Forbidden",
-                    BeaconResponse.failure("forbidden", "Projects can only be started from Beacon's own page.")
+                    BeaconResponse.failure("forbidden", "Projects can only be \(action)ed from Beacon's own page.")
                 )
                 return
             }
             do {
-                ProxyResponder.sendJSON(on: channel, status: "202 Accepted", try runner.start(site))
+                let status = action == "restart" ? try runner.restart(site) : try runner.start(site)
+                ProxyResponder.sendJSON(on: channel, status: "202 Accepted", status)
             } catch let error as BeaconClientError {
                 ProxyResponder.sendJSON(
                     on: channel, status: "409 Conflict", BeaconResponse.failure(error.code, error.message)

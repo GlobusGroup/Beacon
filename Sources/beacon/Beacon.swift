@@ -339,11 +339,22 @@ extension BeaconCLI {
 
     struct Logs: ParsableCommand {
         static let configuration = CommandConfiguration(
-            abstract: "Follow the output of a project Beacon started."
+            abstract: "Show the output of a project Beacon started.",
+            discussion: """
+            In a terminal it keeps following the output until you press Ctrl-C. \
+            Anywhere else (a script, an agent) it prints the last lines and exits, \
+            since nobody is there to stop it.
+            """
         )
 
         @Argument(help: "Project name. Defaults to the current directory's name.")
         var name: String?
+
+        @Option(name: [.customShort("n"), .long], help: "How many lines to show.")
+        var lines = 100
+
+        @Flag(inversion: .prefixedNo, help: "Keep following new output. Defaults to on in a terminal, off otherwise.")
+        var follow: Bool?
 
         func run() throws {
             let site = BeaconCLI.perform {
@@ -355,7 +366,8 @@ extension BeaconCLI {
             }
             let tail = Process()
             tail.executableURL = URL(fileURLWithPath: "/usr/bin/tail")
-            tail.arguments = ["-n", "100", "-f", file]
+            let following = follow ?? (isatty(STDOUT_FILENO) == 1)
+            tail.arguments = ["-n", String(max(lines, 0))] + (following ? ["-f"] : []) + [file]
             try tail.run()
             tail.waitUntilExit()
         }

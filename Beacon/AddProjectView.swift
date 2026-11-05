@@ -187,7 +187,7 @@ struct AddProjectView: View {
         }
         // This project's own server already up on its own port isn't a clash.
         let ownPort = model.sites.first { $0.name == slug }?.port
-        if ownPort != value, PortProbe.isListening(value) { return .busy(value) }
+        if ownPort != value, PortProbe.isTaken(value) { return .busy(value) }
         return .free(value)
     }
 
@@ -200,7 +200,7 @@ struct AddProjectView: View {
         let taken = Set(others.map(\.port)).union(daemonPorts)
         let start = max(port, 1024)
         return (start...min(65535, start + 1000)).first {
-            !taken.contains($0) && !PortProbe.isListening($0)
+            !taken.contains($0) && !PortProbe.isTaken($0)
         }
     }
 
