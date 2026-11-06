@@ -8,7 +8,7 @@ Run `npm run dev` from this folder. The preview server calls `beacon register be
 
 ## Hosting
 
-The relay image (`Relay/Dockerfile`) copies the HTML, CSS and JavaScript listed in its `COPY` statements, plus the Beacon symbol, Docker symbol and lighthouse WebP, into `/srv/site`, and `beacon-relay` serves them on its apex. `BEACON_HOME=card` switches back to the plain card; see `Relay/README.md`. If the page starts using another asset, add it to the `COPY` lines in the Dockerfile. Link assets with plain relative paths in quotes (`href="styles.css"`): the relay adds `?v=<hash>` to those itself, so caches pick up changes.
+The relay image (`Relay/Dockerfile`) copies the HTML, CSS and JavaScript listed in its `COPY` statements, plus the Beacon symbol, Docker symbol, lighthouse WebP, social card and the Schibsted Grotesk font files, into `/srv/site`, and `beacon-relay` serves them on its apex. `BEACON_HOME=card` switches back to the plain card; see `Relay/README.md`. If the page starts using another asset, add it to the `COPY` lines in the Dockerfile. Link assets with plain relative paths in quotes (`href="styles.css"`): the relay adds `?v=<hash>` to those itself, so caches pick up changes.
 
 Any static host works too: deploy the same files. `server.mjs` is only a local preview convenience.
 

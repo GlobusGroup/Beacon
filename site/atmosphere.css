@@ -9,8 +9,6 @@
 .atmosphere-beam{position:absolute;width:88%;height:190px;right:-10%;top:3%;transform:rotate(-13deg);transform-origin:100% 50%;background:radial-gradient(ellipse 90% 24% at 100% 51%,#ffce7540,transparent 78%);mask-image:linear-gradient(to left,#000,transparent 95%);filter:blur(17px);opacity:.75}
 .coastal-sprite{position:absolute;left:0;top:0;width:32px;height:16px;pointer-events:none;background:radial-gradient(ellipse 45% 20%,#fff1c4 0%,#f5b544c9 25%,#f5b54430 55%,transparent 100%);contain:strict;opacity:0}
 .sprite-response{background:radial-gradient(ellipse 45% 20%,#b9f4e0 0%,#5bc5a8c9 25%,#38a88a30 55%,transparent 100%)}
-.atmosphere-shore{--warm-x:11%;--warm-y:40%;--cool-x:95%;--cool-y:70%;--light-strength:.12}
-.atmosphere-shore .atmosphere-beam{opacity:.3;right:45%;top:10%;transform:rotate(16deg)}
 .atmosphere-channel{--warm-x:90%;--warm-y:43%;--cool-y:90%}
 .atmosphere-tide{--warm-x:0%;--warm-y:35%;--cool-x:100%;--cool-y:65%;--light-strength:.13}
 .atmosphere-tide .atmosphere-beam{display:none}

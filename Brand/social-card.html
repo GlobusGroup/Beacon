@@ -1,0 +1,42 @@
+<!doctype html>
+<!--
+  Source for site/assets/social-card.jpg, the image shown when beacon.cab is
+  linked on social sites and in messaging apps. To re-render it at 1200×630,
+  from the package root:
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new \
+      --hide-scrollbars --allow-file-access-from-files --force-device-scale-factor=1 \
+      --window-size=1200,630 --virtual-time-budget=8000 \
+      --screenshot=/tmp/social-card.png "file://$PWD/Brand/social-card.html"
+    sips -s format jpeg -s formatOptions 86 /tmp/social-card.png --out site/assets/social-card.jpg
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face{font-family:'Schibsted Grotesk';font-weight:400 900;font-display:block;src:url('../site/assets/schibsted-grotesk-latin.woff2') format('woff2')}
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:1200px;height:630px;overflow:hidden;background:#111b22}
+  body{font-family:'Schibsted Grotesk',sans-serif;color:#f5f3ee;position:relative}
+  .scene{position:absolute;inset:0;background:
+    linear-gradient(90deg,rgba(13,21,27,.86) 0%,rgba(13,21,27,.62) 38%,rgba(13,21,27,.08) 66%,rgba(13,21,27,0) 100%),
+    linear-gradient(180deg,rgba(13,21,27,0) 55%,rgba(13,21,27,.55) 100%),
+    url('../site/assets/lighthouse-sunset.png') 78% 18%/auto 860px no-repeat}
+  .copy{position:absolute;left:84px;top:0;bottom:0;display:flex;flex-direction:column;justify-content:center;gap:34px}
+  .wordmark{display:flex;align-items:center;gap:16px}
+  .wordmark img{width:44px;height:52px}
+  .wordmark span{font-size:50px;font-weight:760;letter-spacing:-2.2px;line-height:1}
+  h1{font-size:76px;line-height:1.06;letter-spacing:-2.6px;font-weight:730}
+  p{font-size:28px;line-height:1.4;color:#e0e3e4;max-width:560px}
+  .domain{position:absolute;left:84px;bottom:52px;font-size:22px;color:#ffce78;letter-spacing:-.2px}
+</style>
+</head>
+<body>
+  <div class="scene"></div>
+  <div class="copy">
+    <div class="wordmark"><img src="../site/assets/beacon-symbol.svg" alt=""><span>beacon</span></div>
+    <h1>DNS &amp; reverse proxy<br>for macOS</h1>
+    <p>Every local project gets its own .test domain and keeps its port.</p>
+  </div>
+  <span class="domain">beacon.cab</span>
+</body>
+</html>

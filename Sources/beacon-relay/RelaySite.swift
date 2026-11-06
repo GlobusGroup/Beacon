@@ -22,6 +22,8 @@ final class RelaySite {
         "svg": "image/svg+xml",
         "webp": "image/webp",
         "png": "image/png",
+        "jpg": "image/jpeg",
+        "woff2": "font/woff2",
         "ico": "image/x-icon",
     ]
 

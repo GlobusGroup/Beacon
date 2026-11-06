@@ -18,7 +18,7 @@ FROM ubuntu:noble
 # browser loads: the full-size PNG renders stay out of the image.
 COPY site/index.html site/styles.css site/app.js /srv/site/
 COPY site/atmosphere.css site/atmosphere.js site/page-order.css site/chrome.css site/chrome.js /srv/site/
-COPY site/assets/beacon-symbol.svg site/assets/docker-mark-white.svg site/assets/lighthouse-sunset.webp /srv/site/assets/
+COPY site/assets/beacon-symbol.svg site/assets/docker-mark-white.svg site/assets/lighthouse-sunset.webp site/assets/social-card.jpg site/assets/schibsted-grotesk-latin.woff2 site/assets/schibsted-grotesk-latin-ext.woff2 /srv/site/assets/
 RUN useradd --system --no-create-home --shell /usr/sbin/nologin beacon \
  && mkdir /data && chown beacon /data
 # Tokens made through the admin API. A named volume copies this directory's

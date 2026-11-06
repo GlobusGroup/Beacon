@@ -8,12 +8,12 @@ const root = fileURLToPath(new URL('.', import.meta.url));
 // Beacon remains the source of truth on every launch.
 const registration = JSON.parse(execFileSync('beacon', ['register', 'beacon-site', '--json'], {cwd: root, encoding: 'utf8'}));
 if (!registration.port || !registration.url) throw new Error('Beacon did not return a port and URL.');
-const types = {'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.svg':'image/svg+xml','.webp':'image/webp','.png':'image/png'};
+const types = {'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.svg':'image/svg+xml','.webp':'image/webp','.png':'image/png','.jpg':'image/jpeg','.woff2':'font/woff2'};
 createServer(async (req, res) => {
   try {
     const pathname = decodeURIComponent(new URL(req.url, registration.url).pathname);
     const path = resolve(root, '.' + (pathname === '/' ? '/index.html' : pathname));
-    if (!path.startsWith(root.endsWith(sep) ? root : root + sep) || !['.html','.css','.js','.svg','.webp','.png'].includes(extname(path))) {
+    if (!path.startsWith(root.endsWith(sep) ? root : root + sep) || !['.html','.css','.js','.svg','.webp','.png','.jpg','.woff2'].includes(extname(path))) {
       res.writeHead(404); return res.end('Not found');
     }
     const info = await stat(path);
