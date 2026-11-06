@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/banner.png" alt="Beacon" width="640">
+  <a href="https://beacon.cab"><img src="docs/images/banner.png" alt="Beacon: every project gets its own .test domain" width="720"></a>
 </p>
 
 <h3 align="center">DNS & reverse proxy for macOS</h3>
@@ -9,16 +9,13 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/GlobusGroup/Beacon/releases/latest/download/Beacon.dmg"><img src="docs/images/download.png" alt="Download Beacon for macOS" width="210"></a>
+  <a href="https://github.com/GlobusGroup/Beacon/releases/latest/download/Beacon.dmg"><img src="docs/images/download.png" alt="Download Beacon for macOS" width="260"></a>
   <br>
-  <sub>Requires macOS 15 or later</sub>
+  <sub>Requires macOS 15 or later · <a href="https://beacon.cab">beacon.cab</a></sub>
 </p>
 
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/menu-dark.png">
-    <img src="docs/images/menu-light.png" alt="Beacon's menu bar panel, listing studio.test, api.test and shop.test with their ports and status" width="380">
-  </picture>
+  <img src="docs/images/menu.png" alt="Beacon's menu bar panel, listing studio.test, api.test and shop.test with their ports and status" width="560">
 </p>
 
 When you register a project, Beacon picks a port for it and keeps that port reserved for the project from then on. Point your dev server at that port and you can open the project at `https://shop.test` instead of `localhost:3104`. Plain `http://` works too.
@@ -166,6 +163,10 @@ Subdomains the containers call have to be listed with `--domain api.shop.test`, 
 
 ### Telling your coding agent
 
+<p align="center">
+  <img src="docs/images/agent.png" alt="Claude Code asked to get the shop project running: it runs beacon register --json, sets the port and APP_URL, starts the dev server and replies with https://shop.test" width="600">
+</p>
+
 Once Beacon is set up, the menu offers to add a short note to Claude Code and Codex. It tells them to get the port from Beacon rather than picking one, and to give you the `.test` URL instead of a `localhost` one. If you close the prompt, you can still add it later under **Settings → Coding agents**.
 
 The same thing from a terminal, for every project:
@@ -186,6 +187,10 @@ When a new version of Beacon changes the note, run the same command again. It re
 
 If you have a relay running (there's a setup guide [further down](#running-your-own-relay)), you can put any registered project on the internet, which is useful for showing someone work in progress or testing webhooks.
 
+<p align="center">
+  <img src="docs/images/sharing-diagram.png" alt="A visitor's browser reaches your relay over HTTPS, and the relay passes the request down a tunnel your Mac opened, so nothing on your Mac listens on the internet" width="640">
+</p>
+
 ```bash
 beacon relay --url relay.example.com --token <token>   # once per Mac
 beacon share shop                    # → https://shop-dean.relay.example.com
@@ -195,13 +200,10 @@ beacon relay                         # tunnel state and what's shared
 ```
 
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/settings-sharing-dark.png">
-    <img src="docs/images/settings-sharing-light.png" alt="Beacon's settings, with the relay address, a saved token and the tunnel connected under Sharing" width="460">
-  </picture>
+  <img src="docs/images/settings-sharing.png" alt="Beacon's settings, with the relay address, a saved token and the tunnel connected under Sharing" width="560">
 </p>
 
-In the app, put the relay address and your token in **Settings → Sharing**. Then right-click a project and choose **Share on the internet…**. Shared projects get a little globe next to them, and the right-click menu has options to copy or open the public link.
+In the app, put the relay address and your token in **Settings → Sharing**. Then open a project's ••• menu, or right-click it, and choose **Share on the internet…**. A shared project gets a small globe on its folder icon, and the same menu has options to copy or open the public link.
 
 While something is shared, your Mac keeps a connection open to the relay and visitors' requests come back down it. Nothing on your Mac is listening on the internet, so you don't need to touch your router or firewall. The address is always `<project>-<label>.<domain>`, where the label comes from your token, so the link stays the same each time you share. Shares also stay on through restarts until you turn them off.
 
