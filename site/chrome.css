@@ -1,0 +1,27 @@
+/* Small, static signal details separate the sections without adding motion. */
+main>section+section{border-top-color:transparent}
+.section-divider{position:absolute;left:0;right:0;top:-20px;height:40px;display:flex;align-items:center;gap:18px;pointer-events:none;z-index:0}
+.section-divider::before,.section-divider::after{content:'';height:1px;flex:1}
+.section-divider::before{background:linear-gradient(90deg,transparent,#8fa6b32c 45%,#f5b54485)}
+.section-divider::after{background:linear-gradient(90deg,#f5b54485,#8fa6b32c 55%,transparent)}
+.divider-signal{position:relative;display:flex;align-items:center;justify-content:center;gap:10px;width:48px;height:28px;flex-shrink:0}
+.divider-signal::before{content:'';position:absolute;inset:-12px -40px;background:radial-gradient(ellipse,#f5b54420,transparent 70%)}
+.divider-signal i{width:1px;height:9px;background:#f5b54470}
+.divider-signal b{width:8px;height:8px;border:1px solid #ffd58e;background:#f5b54418;transform:rotate(45deg);box-shadow:0 0 9px #f5b54445}
+main>section:nth-of-type(even) .section-divider::after{background:linear-gradient(90deg,#d5ba7e85,#38a88a35 55%,transparent)}
+/* Keep the header's footprint stable; only its bounded glass surface appears. */
+:root{scroll-padding-top:120px}
+.site-header{position:sticky;top:0;z-index:50;isolation:isolate}
+.site-header::before{content:'';position:absolute;inset:12px -20px;z-index:-1;pointer-events:none;border:1px solid #b0c6ce30;border-radius:17px;background:linear-gradient(120deg,#293239e8,#142027eb);box-shadow:0 10px 35px #0003,inset 0 1px 0 #ffffff0a;opacity:0;transition:opacity .22s ease}
+.site-header.is-stuck::before{opacity:1}
+@supports ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  .site-header.is-stuck::before{background:linear-gradient(120deg,#293239ba,#142027c9);backdrop-filter:blur(14px) saturate(125%);-webkit-backdrop-filter:blur(14px) saturate(125%)}
+}
+.header-sentinel{position:absolute;top:0;left:0;width:1px;height:1px;pointer-events:none}
+/* Keep keyboard focus and the skip link above the sticky surface. */
+.skip-link{z-index:100}
+#main{scroll-margin-top:0}
+@media(max-width:1250px){.site-header::before{inset:10px -16px}}
+@media(max-width:1050px){:root{scroll-padding-top:108px}.site-header::before{inset:8px -14px}}
+@media(max-width:720px){:root{scroll-padding-top:96px}.site-header::before{inset:8px -11px;border-radius:14px}.section-divider{gap:12px}.divider-signal{width:36px;gap:8px}.divider-signal b{width:6px;height:6px}.divider-signal i{height:6px}}
+@media(prefers-reduced-motion:reduce){.site-header::before{transition:none}}

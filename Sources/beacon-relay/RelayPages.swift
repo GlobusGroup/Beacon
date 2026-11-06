@@ -10,6 +10,12 @@ enum RelayPages {
         """)
     }
 
+    static func notFound() -> String {
+        html("404 Not Found", title: "Nothing here", detail: """
+        This page doesn't exist. The <a href="/">Beacon home page</a> is the place to start.
+        """)
+    }
+
     static func notShared(host: String) -> String {
         html("404 Not Found", title: "Nothing is shared here", detail: """
         <code>\(escape(host))</code> isn't shared right now. The Mac sharing it may be \
@@ -73,6 +79,7 @@ enum RelayPages {
           code { font: 13px ui-monospace, "SF Mono", Menlo, monospace; background: var(--tint);
                  border: 1px solid var(--line); padding: 1px 6px; border-radius: 5px; color: var(--text);
                  overflow-wrap: anywhere; }
+          a { color: var(--text); text-underline-offset: 2px; }
           footer { margin: 16px 4px 0; color: var(--secondary); font: 12px ui-monospace, Menlo, monospace; }
         </style>
         </head>

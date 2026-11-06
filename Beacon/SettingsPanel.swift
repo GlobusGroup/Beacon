@@ -121,41 +121,46 @@ struct SettingsPanel: View {
     // MARK: - Layout
 
     private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 7) {
+                BeaconSymbol(size: 20)
+                Text("Beacon")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Color.beaconText)
+            }
+            .padding(.horizontal, 8)
+            .padding(.bottom, 12)
+
             ForEach(panes) { pane in
-                Button { self.pane = pane } label: { sidebarRow(pane) }
-                    .buttonStyle(.plain)
+                Button { self.pane = pane } label: {
+                    SidebarItem(title: pane.title, symbol: pane.symbol,
+                                selected: current == pane, attention: needsAttention(pane))
+                }
+                .buttonStyle(.plain)
             }
             Spacer()
+            resolverStatus
+                .padding(.horizontal, 9)
         }
-        .padding(10)
-        .frame(width: 190)
+        .padding(.horizontal, 10)
+        .padding(.top, 8)
+        .padding(.bottom, 14)
+        .frame(width: 196)
         .frame(maxHeight: .infinity)
-        .background(Color.beaconHairline.opacity(0.35))
+        .background(Color.beaconSidebar)
     }
 
-    private func sidebarRow(_ pane: SettingsPane) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: pane.symbol)
-                .frame(width: 18)
-                .foregroundStyle(Color.beaconSecondaryText)
-            Text(pane.title)
-                .font(.beaconBody)
-                .foregroundStyle(Color.beaconText)
-            Spacer()
-            if needsAttention(pane) {
-                Circle().fill(Color.beaconSignal).frame(width: 7, height: 7)
-                    .accessibilityLabel("Needs attention")
-            }
+    @ViewBuilder
+    private var resolverStatus: some View {
+        if !model.hasLoaded {
+            EmptyView()
+        } else if !model.isRunning {
+            StatusLabel(text: "Not running", tone: .idle)
+        } else if !model.resolverActive {
+            StatusLabel(text: "Resolver missing", tone: .attention)
+        } else {
+            StatusLabel(text: "Resolver active", tone: .online)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(current == pane ? Color.beaconSelection : Color.clear)
-        )
-        .contentShape(Rectangle())
-        .accessibilityAddTraits(current == pane ? .isSelected : [])
     }
 
     @ViewBuilder
@@ -178,6 +183,8 @@ struct SettingsPanel: View {
                 }
             }
             .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
+            .background(Color.beaconBackground)
         }
     }
 

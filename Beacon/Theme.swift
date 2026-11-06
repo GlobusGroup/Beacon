@@ -13,10 +13,13 @@ extension Color {
     static let beaconSlate = Color(hex: 0x737C86)
     static let beaconOnline = Color(hex: 0x38A88A)
 
-    // Surfaces, adapted for dark mode in the direction of the concept board.
-    static let beaconBackground = Color(light: 0xF5F3EE, dark: 0x181C20)
-    static let beaconSurface = Color(light: 0xFFFFFF, dark: 0x22262B)
-    static let beaconHairline = Color(light: 0xE4E1DA, dark: 0x30353B)
+    // Surfaces. Dark mode leans towards the slate blue of the website's
+    // window mockups rather than a neutral grey.
+    static let beaconBackground = Color(light: 0xF5F3EE, dark: 0x171E23)
+    static let beaconSurface = Color(light: 0xFFFFFF, dark: 0x1F272D)
+    static let beaconHairline = Color(light: 0xE4E1DA, dark: 0x2F383F)
+    /// The sidebar column in Settings: one step darker than the content.
+    static let beaconSidebar = Color(light: 0xEDEAE3, dark: 0x151B20)
 
     static let beaconText = Color(light: 0x181C20, dark: 0xF5F3EE)
     /// The guide asks for darker text than Slate for small labels on light
@@ -24,7 +27,12 @@ extension Color {
     static let beaconSecondaryText = Color(light: 0x5B636C, dark: 0x9AA2AB)
 
     /// Row highlight: Signal at low strength, as in the guide's project table.
-    static let beaconSelection = Color(light: 0xFBE7C2, dark: 0x4A3B1E)
+    static let beaconSelection = Color(light: 0xFBE7C2, dark: 0x3A3220)
+    /// Border of a selected sidebar item: Signal, a little transparent.
+    static let beaconSelectionBorder = Color(light: 0xE9B55A, dark: 0x7A5D2C)
+    /// Signal as used for icons on light surfaces, where the brand amber is
+    /// too pale to read.
+    static let beaconSignalIcon = Color(light: 0xC98A1C, dark: 0xF5B544)
 
     init(hex: UInt32) {
         self.init(
@@ -82,12 +90,25 @@ struct SignalButtonStyle: ButtonStyle {
             .frame(height: compact ? 24 : 28)
             .background(
                 RoundedRectangle(cornerRadius: compact ? 6 : 7, style: .continuous)
-                    .fill(Color.beaconSignal)
+                    .fill(LinearGradient.beaconSignal)
                     .brightness(configuration.isPressed ? -0.08 : 0)
             )
+            .overlay(
+                RoundedRectangle(cornerRadius: compact ? 6 : 7, style: .continuous)
+                    .strokeBorder(Color(hex: 0xFFCF79), lineWidth: 0.5)
+            )
+            .shadow(color: Color.beaconSignal.opacity(isEnabled ? 0.18 : 0), radius: 6, y: 1)
             .opacity(isEnabled ? 1 : 0.45)
             .contentShape(Rectangle())
     }
+}
+
+extension LinearGradient {
+    /// The amber buttons on the website: lighter at the top left.
+    static let beaconSignal = LinearGradient(
+        colors: [Color(hex: 0xFFD47E), Color(hex: 0xF5B544), Color(hex: 0xEEA72E)],
+        startPoint: .topLeading, endPoint: .bottomTrailing
+    )
 }
 
 /// Removal actions. Same shape as `SignalButtonStyle` so the two sit level,
@@ -177,6 +198,94 @@ struct StatusLabel: View {
     }
 }
 
+/// The same status as a small pill, for project rows: tinted capsule,
+/// coloured dot, word. Still never colour alone.
+struct StatusBadge: View {
+    let text: String
+    let tone: StatusLabel.Tone
+
+    var body: some View {
+        HStack(spacing: 5) {
+            switch tone {
+            case .online: Circle().fill(Color.beaconOnline).frame(width: 6, height: 6)
+            case .idle: Circle().strokeBorder(Color.beaconSlate, lineWidth: 1.2).frame(width: 6, height: 6)
+            case .attention: Circle().fill(Color.beaconSignal).frame(width: 6, height: 6)
+            }
+            Text(text)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(foreground)
+        }
+        .padding(.horizontal, 8)
+        // One width for every state, so a list of badges lines up.
+        .frame(width: 78, height: 20, alignment: .leading)
+        .background(Capsule().fill(tint.opacity(0.16)))
+        .overlay(Capsule().strokeBorder(tint.opacity(0.22), lineWidth: 0.5))
+        .fixedSize()
+    }
+
+    private var tint: Color {
+        switch tone {
+        case .online: .beaconOnline
+        case .idle: .beaconSlate
+        case .attention: .beaconSignal
+        }
+    }
+
+    private var foreground: Color {
+        switch tone {
+        case .online: Color(light: 0x1F6E58, dark: 0xD1F6E4)
+        case .idle: .beaconSecondaryText
+        case .attention: Color(light: 0x8A5A0B, dark: 0xFFE2A8)
+        }
+    }
+}
+
+// MARK: - Sidebar
+
+/// One entry in a sidebar: amber icon, amber hairline and a warm tint when
+/// selected, as in the website's window mockup.
+struct SidebarItem: View {
+    let title: String
+    let symbol: String
+    let selected: Bool
+    var attention = false
+    @State private var isHovering = false
+
+    var body: some View {
+        HStack(spacing: 9) {
+            Image(systemName: symbol)
+                .font(.system(size: 13))
+                .frame(width: 18)
+                .foregroundStyle(selected ? Color.beaconSignalIcon : Color.beaconSecondaryText)
+            Text(title)
+                .font(.system(size: 13, weight: selected ? .medium : .regular))
+                .foregroundStyle(Color.beaconText)
+            Spacer()
+            if attention {
+                Circle().fill(Color.beaconSignal).frame(width: 7, height: 7)
+                    .accessibilityLabel("Needs attention")
+            }
+        }
+        .padding(.horizontal, 9)
+        .frame(height: 30)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(selected
+                      ? AnyShapeStyle(LinearGradient(
+                          colors: [Color.beaconSelection, Color.beaconSelection.opacity(0.45)],
+                          startPoint: .leading, endPoint: .trailing))
+                      : AnyShapeStyle(Color.primary.opacity(isHovering ? 0.05 : 0)))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(selected ? Color.beaconSelectionBorder : .clear, lineWidth: 0.75)
+        )
+        .contentShape(Rectangle())
+        .onHover { isHovering = $0 }
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
 // MARK: - Brand artwork
 
 struct BeaconSymbol: View {
@@ -216,13 +325,13 @@ struct BeaconLockup: View {
 
 extension View {
     /// A raised card on the canvas: white in light mode, one step up from Ink in dark.
-    func beaconCard() -> some View {
+    func beaconCard(radius: CGFloat = 10) -> some View {
         background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: radius, style: .continuous)
                 .fill(Color.beaconSurface)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: radius, style: .continuous)
                 .strokeBorder(Color.beaconHairline, lineWidth: 1)
         )
     }

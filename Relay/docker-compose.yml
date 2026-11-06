@@ -21,6 +21,8 @@ services:
       # Safe because the relay is only reachable through Traefik: no ports are
       # published, so every X-Forwarded-For it sees was written by Traefik.
       BEACON_TRUST_FORWARDED_FOR: "true"
+      # site (the Beacon website) or card (a one-line page). Set it in .env.
+      BEACON_HOME: ${BEACON_HOME:-site}
     volumes:
       # Tokens admins create from the Beacon app. Keep it across redeploys.
       - relay-data:/data

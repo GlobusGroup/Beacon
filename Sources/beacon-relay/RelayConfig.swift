@@ -23,6 +23,18 @@ struct RelayConfig {
     /// Where tokens created through the admin API are kept. A volume in Docker.
     var dataDir: String
     var verbose: Bool
+    /// What the apex shows a browser: the Beacon website, or the small card.
+    var home: Home
+    /// Where the website's files are. The image ships them in /srv/site.
+    var siteDir: String
+
+    enum Home: String {
+        /// The Beacon landing page from `site/`, falling back to the card if
+        /// the files aren't there.
+        case site
+        /// The one-card page that says what the server is.
+        case card
+    }
 
     enum Problem: Error, CustomStringConvertible {
         case missing(String)
@@ -46,6 +58,11 @@ struct RelayConfig {
             throw Problem.invalid("BEACON_PUBLIC_SCHEME should be https or http, not '\(scheme)'.")
         }
 
+        let rawHome = (env["BEACON_HOME"] ?? "").trimmingCharacters(in: .whitespaces).lowercased()
+        guard let home = rawHome.isEmpty ? .site : Home(rawValue: rawHome) else {
+            throw Problem.invalid("BEACON_HOME should be site or card, not '\(rawHome)'.")
+        }
+
         let tokens = try parseTokens(env["BEACON_TOKENS"] ?? "")
         let admins = try parseAdmins(env["BEACON_ADMINS"] ?? "", tokens: tokens)
 
@@ -58,7 +75,9 @@ struct RelayConfig {
             tokens: tokens,
             admins: admins,
             dataDir: (env["BEACON_DATA_DIR"] ?? "").isEmpty ? "/data" : env["BEACON_DATA_DIR"]!,
-            verbose: (env["BEACON_VERBOSE"] ?? "").lowercased() == "true"
+            verbose: (env["BEACON_VERBOSE"] ?? "").lowercased() == "true",
+            home: home,
+            siteDir: (env["BEACON_SITE_DIR"] ?? "").isEmpty ? "/srv/site" : env["BEACON_SITE_DIR"]!
         )
     }
 

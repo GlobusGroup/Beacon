@@ -27,14 +27,16 @@ final class RelayFrontendHandler: ChannelInboundHandler, RemovableChannelHandler
     private let hub: RelayHub
     private let config: RelayConfig
     private let tokens: RelayTokens
+    private let site: RelaySite?
     private var state: State = .reading
     private var raw = ByteBuffer()
     private var rewriter: RequestRewriter?
 
-    init(hub: RelayHub, config: RelayConfig, tokens: RelayTokens) {
+    init(hub: RelayHub, config: RelayConfig, tokens: RelayTokens, site: RelaySite?) {
         self.hub = hub
         self.config = config
         self.tokens = tokens
+        self.site = site
     }
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
@@ -89,6 +91,14 @@ final class RelayFrontendHandler: ChannelInboundHandler, RemovableChannelHandler
         }
         if isShareHost {
             reply(context, RelayPages.notShared(host: host))
+            return
+        }
+        if let site {
+            if let page = site.response(method: head.method, path: path, ifNoneMatch: head.value(of: "If-None-Match")) {
+                reply(context, bytes: page)
+            } else {
+                reply(context, RelayPages.notFound())
+            }
             return
         }
         reply(context, RelayPages.home(domain: config.domain))
@@ -231,9 +241,13 @@ final class RelayFrontendHandler: ChannelInboundHandler, RemovableChannelHandler
     }
 
     private func reply(_ context: ChannelHandlerContext, _ page: String) {
+        reply(context, bytes: Array(page.utf8))
+    }
+
+    private func reply(_ context: ChannelHandlerContext, bytes page: [UInt8]) {
         state = .closed
-        var out = context.channel.allocator.buffer(capacity: page.utf8.count)
-        out.writeString(page)
+        var out = context.channel.allocator.buffer(capacity: page.count)
+        out.writeBytes(page)
         let channel = context.channel
         context.writeAndFlush(wrapOutboundOut(out)).whenComplete { _ in
             channel.close(promise: nil)

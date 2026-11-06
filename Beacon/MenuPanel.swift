@@ -43,22 +43,23 @@ struct MenuPanel: View {
             Divider().overlay(Color.beaconHairline)
             footer
         }
-        .frame(width: 380)
+        .frame(width: 400)
+        .background(Color.beaconBackground.opacity(0.35))
     }
 
     // MARK: - Sections
 
     private var header: some View {
         HStack(spacing: 8) {
-            BeaconSymbol(size: 16)
+            BeaconSymbol(size: 18)
             Text("Beacon")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Color.beaconText)
             Spacer()
             serviceStatus
         }
         .padding(.horizontal, 16)
-        .frame(height: 44)
+        .frame(height: 48)
     }
 
     @ViewBuilder
@@ -116,9 +117,10 @@ struct MenuPanel: View {
                         ProjectRow(site: site)
                     }
                 }
-                .padding(.vertical, 6)
+                .padding(.vertical, 9)
             }
-            .frame(maxHeight: 44 * 7 + 12)
+            // Seven rows (48pt plus 3pt above and below), then it scrolls.
+            .frame(maxHeight: 54 * 7 + 18)
             .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -180,63 +182,100 @@ struct ProjectRow: View {
     }
 
     private var row: some View {
-        HStack(spacing: 12) {
-            HStack(spacing: 6) {
+        HStack(spacing: 10) {
+            Image(systemName: "folder")
+                .font(.system(size: 14))
+                .foregroundStyle(Color.beaconSignalIcon)
+                .frame(width: 18)
+                .overlay(alignment: .bottomTrailing) {
+                    if shared != nil { shareBadge.offset(x: 3, y: 3) }
+                }
+
+            // The domain gets the whole line, so it only truncates when it's
+            // very long; the port sits underneath.
+            VStack(alignment: .leading, spacing: 2) {
                 Text(site.domain)
-                    .font(.beaconBodyEmphasis)
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Color.beaconText)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                if shared != nil { shareBadge }
+                Text(verbatim: "→ \(site.port)")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(Color.beaconSecondaryText)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text(verbatim: "localhost:\(site.port)")
-                .font(.beaconMono)
-                .foregroundStyle(Color.beaconSecondaryText)
-
-            status
-                .frame(width: 72, alignment: .leading)
-
             action
                 .frame(width: 20)
+
+            status
+
+            moreMenu
         }
-        .padding(.horizontal, 12)
-        .frame(height: 44)
+        .padding(.leading, 11)
+        .padding(.trailing, 6)
+        .frame(height: 48)
         .overlay(alignment: .bottom) {
             if isStarting, let run { StartProgress(run: run).padding(.horizontal, 12) }
         }
         .background(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(isHovering ? Color.beaconSelection : .clear)
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(isHovering ? Color.beaconSelection.opacity(0.7) : Color.beaconSurface)
         )
-        .padding(.horizontal, 6)
+        .overlay(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(isHovering ? Color.beaconSelectionBorder : Color.beaconHairline, lineWidth: 0.75)
+        )
+        .padding(.horizontal, 12)
+        .padding(.vertical, 3)
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
         .onTapGesture { model.open(site) }
         .help(helpText)
-        .contextMenu {
-            Button("Open in browser") { model.open(site) }
-            if model.canStart(site) && !isUp && !isStarting {
-                Button("Start project") { Task { await model.start(site) } }
-            }
-            if isUp {
-                Button("Stop project") { Task { await model.stop(site) } }
-            }
-            if run != nil {
-                Button("Show output") { model.showOutput(site) }
-            }
-            Divider()
-            Button("Copy URL") { model.copy(site.url) }
-            Button("Copy port") { model.copy(String(site.port)) }
-            if site.path != nil {
-                Button("Show in Finder") { model.revealInFinder(site) }
-            }
-            Divider()
-            shareMenuItems
-            Divider()
-            Button("Remove project…", role: .destructive) { confirmingRemoval = true }
+        .contextMenu { menuItems }
+    }
+
+    /// The row's actions, behind the ••• button and on right-click.
+    @ViewBuilder
+    private var menuItems: some View {
+        Button("Open in browser") { model.open(site) }
+        if model.canStart(site) && !isUp && !isStarting {
+            Button("Start project") { Task { await model.start(site) } }
         }
+        if isUp {
+            Button("Stop project") { Task { await model.stop(site) } }
+        }
+        if run != nil {
+            Button("Show output") { model.showOutput(site) }
+        }
+        Divider()
+        Button("Copy URL") { model.copy(site.url) }
+        Button("Copy port") { model.copy(String(site.port)) }
+        if site.path != nil {
+            Button("Show in Finder") { model.revealInFinder(site) }
+        }
+        Divider()
+        shareMenuItems
+        Divider()
+        Button("Remove project…", role: .destructive) { confirmingRemoval = true }
+    }
+
+    private var moreMenu: some View {
+        Menu {
+            menuItems
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.beaconSecondaryText)
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("More actions")
+        .accessibilityLabel("Actions for \(site.domain)")
     }
 
     // MARK: - Sharing
@@ -259,9 +298,16 @@ struct ProjectRow: View {
     /// Green once the relay has the URL live, amber while it hasn't.
     private var shareBadge: some View {
         let live = shared?.publicURL != nil && model.relay?.state == .connected
+        // A small filled disc on the folder's corner: green once the public
+        // URL is live, amber while it's still connecting.
         return Image(systemName: "globe")
-            .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(live ? Color.beaconOnline : Color.beaconSignal)
+            .font(.system(size: 7, weight: .bold))
+            .foregroundStyle(.white)
+            .frame(width: 11, height: 11)
+            .background(Circle().fill(live ? Color.beaconOnline : Color.beaconSignal))
+            // Cuts the badge out of the folder outline behind it.
+            .overlay(Circle().strokeBorder(isHovering ? Color.beaconSelection : Color.beaconSurface, lineWidth: 1.5).padding(-1.5))
+            .accessibilityLabel(live ? "Shared" : "Sharing, connecting")
     }
 
     /// The address the relay will give this project, when it can be known in
@@ -314,11 +360,15 @@ struct ProjectRow: View {
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(Color.beaconSelection.opacity(0.6))
         )
-        .padding(.horizontal, 6)
-        .padding(.vertical, 4)
+        .overlay(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(Color.beaconSelectionBorder, lineWidth: 0.75)
+        )
+        .padding(.horizontal, 12)
+        .padding(.vertical, 3)
     }
 
     /// Asked inside the row rather than in a dialog. A dialog opens as its
@@ -347,28 +397,27 @@ struct ProjectRow: View {
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(Color.beaconSelection.opacity(0.6))
         )
-        .padding(.horizontal, 6)
-        .padding(.vertical, 4)
+        .overlay(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(Color.beaconSelectionBorder, lineWidth: 0.75)
+        )
+        .padding(.horizontal, 12)
+        .padding(.vertical, 3)
     }
 
     @ViewBuilder
     private var status: some View {
         if isStarting {
-            HStack(spacing: 6) {
-                ProgressView().controlSize(.mini)
-                Text("Starting")
-                    .font(.beaconLabel)
-                    .foregroundStyle(Color.beaconSecondaryText)
-            }
+            StatusBadge(text: "Starting", tone: .attention)
         } else if isUp {
-            StatusLabel(text: "Online", tone: .online)
+            StatusBadge(text: "Online", tone: .online)
         } else if run?.state == .failed {
-            StatusLabel(text: "Failed", tone: .attention)
+            StatusBadge(text: "Failed", tone: .attention)
         } else {
-            StatusLabel(text: "Offline", tone: .idle)
+            StatusBadge(text: "Offline", tone: .idle)
         }
     }
 

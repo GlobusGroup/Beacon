@@ -131,14 +131,14 @@ enum SnapshotRenderer {
             ).frame(width: 530, height: 520)), relayAdmin),
             ("menu-9-sharing", AnyView(MenuPanel()), sharing),
             ("menu-10-share-form", AnyView(
-                ProjectRow(site: projects[1], askingToShare: true).frame(width: 380).padding(.vertical, 6)
+                ProjectRow(site: projects[1], askingToShare: true).frame(width: 400).padding(.vertical, 6)
             ), sharing),
             ("settings-sharing", AnyView(SettingsPanel(pane: .sharing)), sharing),
             ("settings-relay-failed", AnyView(SettingsPanel(pane: .sharing)), relayFailed),
             ("menu-6-starting", AnyView(MenuPanel()), running),
             ("menu-7-failed", AnyView(MenuPanel()), failed),
             ("menu-8-confirm-remove", AnyView(
-                ProjectRow(site: projects[2], confirmingRemoval: true).frame(width: 380).padding(.vertical, 6)
+                ProjectRow(site: projects[2], confirmingRemoval: true).frame(width: 400).padding(.vertical, 6)
             ), ready),
             ("menu-1-not-installed", AnyView(MenuPanel()), fresh),
             ("menu-2-certificate-pending", AnyView(MenuPanel()), installed),

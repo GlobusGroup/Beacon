@@ -13,6 +13,7 @@ on:
       - Sources/BeaconTunnel/**
       - Sources/beacon-relay/**
       - Relay/Dockerfile
+      - site/**
       - .dockerignore
       - .github/workflows/relay-image.yml
   workflow_dispatch:

@@ -63,6 +63,18 @@ To build the image yourself, from the package root:
 - **Shares are public** unless given `--password`. Anyone with the URL reaches
   the dev server, including its debug pages.
 
+## The home page
+
+Visitors to the apex itself see the Beacon website, built from
+[`site/`](../site) into the image at `/srv/site`. It's read into memory when the
+relay starts, so changing it means a new image (or a restart, if you mount your
+own files over `BEACON_SITE_DIR`). Pages are sent with `Cache-Control: no-cache`;
+the relay links styles, scripts and images from them as `file?v=<hash>`, so those can
+be cached for a day, by browsers and by a CDN such as Cloudflare in front of the
+relay, and a redeploy still shows at once. Set `BEACON_HOME=card` to show the plain card
+instead. Either way `/_tunnel`, `/_admin` and `/healthz` behave as before, and
+unknown share hostnames still get the "Nothing is shared here" page.
+
 ## Admin API
 
 Tokens labelled in `BEACON_ADMINS`, and tokens an admin created with admin
@@ -93,6 +105,8 @@ digests, so the file can't be used to connect. Errors are
 | `BEACON_PUBLIC_PORT` | `443` | Port visitors use |
 | `BEACON_TRUST_FORWARDED_FOR` | `true` | Read the client address from `X-Forwarded-For`. Only safe behind a proxy |
 | `BEACON_VERBOSE` | `false` | Log every relayed request |
+| `BEACON_HOME` | `site` | What the apex shows: `site`, the Beacon website from [`site/`](../site), or `card`, a single card saying what the server is |
+| `BEACON_SITE_DIR` | `/srv/site` | Where the website's files are. The image ships them there; if they're missing the relay logs a warning and shows the card |
 
 ## Running it locally
 
@@ -102,7 +116,7 @@ From the package root, with no Traefik and no TLS:
 swift build --product beacon-relay
 BEACON_DOMAIN=relay.example.com BEACON_TOKENS=dean:$(openssl rand -hex 24) BEACON_ADMINS=dean \
   BEACON_DATA_DIR=/tmp/beacon-relay BEACON_PUBLIC_SCHEME=http BEACON_PUBLIC_PORT=8090 PORT=8090 \
-  BEACON_TRUST_FORWARDED_FOR=false .build/debug/beacon-relay
+  BEACON_TRUST_FORWARDED_FOR=false BEACON_SITE_DIR=site .build/debug/beacon-relay
 ```
 
 Point a Mac at it with `beacon relay --url ws://127.0.0.1:8090 --token …`, and

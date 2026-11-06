@@ -1,0 +1,47 @@
+/* Coastal light and sparse signal highlights. Separate files for review. */
+.atmospheric-section{position:relative;isolation:isolate;border-top-color:#b6c7cf20}
+.section-atmosphere{position:absolute;z-index:-1;pointer-events:none;left:50%;top:-65px;width:100vw;height:calc(100% + 130px);transform:translateX(-50%);overflow:clip;--warm-x:85%;--warm-y:20%;--cool-x:5%;--cool-y:85%;--light-strength:.17}
+/* Only the static artwork is masked; moving sprites sit on separate layers. */
+.atmosphere-static{position:absolute;inset:0;mask-image:linear-gradient(transparent,#000 13%,#000 86%,transparent)}
+.coastal-art{position:absolute;top:0;left:50%;transform:translateX(-50%);width:min(100%,2000px);height:100%;overflow:visible;mask-image:linear-gradient(90deg,transparent,#000 9%,#000 91%,transparent)}
+.coastal-contour{fill:none;stroke-width:1;vector-effect:non-scaling-stroke}
+.atmosphere-light{position:absolute;inset:0;background:radial-gradient(ellipse 43% 33% at var(--warm-x) var(--warm-y),rgb(245 181 68 / var(--light-strength)),transparent 83%),radial-gradient(ellipse 45% 40% at var(--cool-x) var(--cool-y),#208e8524,transparent 80%)}
+.atmosphere-beam{position:absolute;width:88%;height:190px;right:-10%;top:3%;transform:rotate(-13deg);transform-origin:100% 50%;background:radial-gradient(ellipse 90% 24% at 100% 51%,#ffce7540,transparent 78%);mask-image:linear-gradient(to left,#000,transparent 95%);filter:blur(17px);opacity:.75}
+.coastal-sprite{position:absolute;left:0;top:0;width:32px;height:16px;pointer-events:none;background:radial-gradient(ellipse 45% 20%,#fff1c4 0%,#f5b544c9 25%,#f5b54430 55%,transparent 100%);contain:strict;opacity:0}
+.sprite-response{background:radial-gradient(ellipse 45% 20%,#b9f4e0 0%,#5bc5a8c9 25%,#38a88a30 55%,transparent 100%)}
+.atmosphere-shore{--warm-x:11%;--warm-y:40%;--cool-x:95%;--cool-y:70%;--light-strength:.12}
+.atmosphere-shore .atmosphere-beam{opacity:.3;right:45%;top:10%;transform:rotate(16deg)}
+.atmosphere-channel{--warm-x:90%;--warm-y:43%;--cool-y:90%}
+.atmosphere-tide{--warm-x:0%;--warm-y:35%;--cool-x:100%;--cool-y:65%;--light-strength:.13}
+.atmosphere-tide .atmosphere-beam{display:none}
+.atmosphere-arch{--warm-x:90%;--warm-y:10%;--cool-x:5%;--cool-y:80%;--light-strength:.12}
+.atmosphere-arch .atmosphere-beam{opacity:.35;top:-5%;transform:rotate(12deg)}
+.atmosphere-beacon{--warm-x:95%;--warm-y:6%;--cool-x:4%;--cool-y:87%;--light-strength:.24}
+.atmosphere-beacon .atmosphere-beam{height:250px;right:-2%;top:0;opacity:1;transform:rotate(-15deg)}
+.atmosphere-harbour{--warm-x:83%;--warm-y:21%;--cool-x:0%;--cool-y:72%;--light-strength:.2}
+.atmosphere-harbour .atmosphere-beam{opacity:.38;top:4%;transform:rotate(18deg)}
+.atmosphere-horizon{--warm-x:50%;--warm-y:45%;--cool-x:100%;--cool-y:95%;--light-strength:.11}
+.atmosphere-horizon .atmosphere-beam{display:none}
+.atmosphere-controls{display:flex;justify-content:flex-end;padding:0 0 18px}
+.atmosphere-motion-control{font-size:11px;color:#a8b7c1;border:1px solid #8fa6b32e;background:#18232a;padding:9px 12px;border-radius:8px;display:flex;align-items:center;gap:9px}
+.atmosphere-motion-control::before{content:'';width:8px;height:9px;border-left:2px solid currentColor;border-right:2px solid currentColor}
+.atmosphere-motion-control[aria-pressed=true]::before{width:0;height:0;border:5px solid transparent;border-right:0;border-left:7px solid currentColor}
+.atmosphere-motion-control:hover{color:#f5b544;border-color:#f5b54466}
+
+@media(max-width:720px){.section-atmosphere{width:100vw;--light-strength:.14}.atmosphere-beacon{--light-strength:.22}.atmosphere-light{opacity:.85}.coastal-contour{stroke-width:.8}.atmosphere-beam{opacity:.45}.atmosphere-controls{justify-content:center}}
+@media(prefers-reduced-motion:reduce){.coastal-sprite{display:none}.atmosphere-controls{display:none}}
+
+/* Repainting 18 conic gradients each frame was the main continuous cost.
+   Keep their colour and shape static; only the cached rim opacity breathes. */
+.glow-frame::before{animation:none!important}
+.glow-frame::after{animation:rim-breathe 12s ease-in-out infinite alternate;animation-play-state:paused}
+.glow-frame.motion-in-view::after{animation-play-state:running}
+.feature-icon::after{animation:none!important}
+.motion-suspended .glow-frame::after{animation-play-state:paused}
+.traffic-packet{display:none;animation:none!important}
+/* Avoid backdrop resampling as the small highlights pass behind UI. */
+.menu-panel,.app-window,.button-quiet{backdrop-filter:none}
+@media(prefers-reduced-motion:reduce){.glow-frame::after{animation:none!important}}
+/* Keep traffic highlights behind the illustrated devices. */
+.traffic-stage>.coastal-sprite{z-index:0}
+.traffic-stations{z-index:1}

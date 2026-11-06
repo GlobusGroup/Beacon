@@ -10,3 +10,6 @@ Scripts
 .DS_Store
 .git
 Relay/.env
+# The website's source renders and preview server aren't needed in the image.
+site/assets/*.png
+site/node_modules

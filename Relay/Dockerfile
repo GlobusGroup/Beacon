@@ -14,6 +14,11 @@ RUN swift build -c release --product beacon-relay --static-swift-stdlib \
  && cp "$(swift build -c release --show-bin-path)/beacon-relay" /beacon-relay
 
 FROM ubuntu:noble
+# The Beacon website, shown on the apex unless BEACON_HOME=card. Only what a
+# browser loads: the full-size PNG renders stay out of the image.
+COPY site/index.html site/styles.css site/app.js /srv/site/
+COPY site/atmosphere.css site/atmosphere.js site/page-order.css site/chrome.css site/chrome.js /srv/site/
+COPY site/assets/beacon-symbol.svg site/assets/docker-mark-white.svg site/assets/lighthouse-sunset.webp /srv/site/assets/
 RUN useradd --system --no-create-home --shell /usr/sbin/nologin beacon \
  && mkdir /data && chown beacon /data
 # Tokens made through the admin API. A named volume copies this directory's
